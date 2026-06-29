@@ -1,0 +1,61 @@
+// ============================================================
+// FIRESTORE SECURITY RULES
+// Cole estas regras em: Firebase Console → Firestore → Rules
+// ============================================================
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Funções auxiliares
+    function isAuth() {
+      return request.auth != null;
+    }
+    function isAdmin() {
+      return isAuth() &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+    }
+    function isOwner(uid) {
+      return isAuth() && request.auth.uid == uid;
+    }
+    function validEmail() {
+      return request.auth.token.email_verified == true;
+    }
+
+    // ── USUÁRIOS ──────────────────────────────────────────────
+    match /users/{uid} {
+      // Leitura: próprio usuário ou admin
+      allow read: if isOwner(uid) || isAdmin();
+      // Criação: só admin pode criar usuários
+      allow create: if isAdmin();
+      // Atualização: admin pode tudo; usuário só pode mudar nome/foto
+      allow update: if isAdmin() || (
+        isOwner(uid) &&
+        !request.resource.data.diff(resource.data).affectedKeys().hasAny(['role','blocked','createdBy'])
+      );
+      // Exclusão: só admin
+      allow delete: if isAdmin();
+    }
+
+    // ── LIVROS DE CADA USUÁRIO ────────────────────────────────
+    match /users/{uid}/books/{bookId} {
+      allow read, write: if isOwner(uid) && validEmail();
+    }
+
+    // ── METAS DE CADA USUÁRIO ─────────────────────────────────
+    match /users/{uid}/goals/{goalId} {
+      allow read, write: if isOwner(uid) && validEmail();
+    }
+
+    // ── LOGS DE AUDITORIA (só leitura do admin) ───────────────
+    match /audit_logs/{logId} {
+      allow read: if isAdmin();
+      allow create: if isAuth();
+      allow update, delete: if false; // imutável
+    }
+
+    // Bloqueio total de qualquer outra coleção
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
