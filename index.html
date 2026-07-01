@@ -1,0 +1,2120 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1"/>
+<meta name="theme-color" content="#F4A7B9"/>
+<meta name="apple-mobile-web-app-capable" content="yes"/>
+<title>📖 Diário de Leitura</title>
+<script src="https://www.gstatic.com/firebasejs/10.7.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.7.0/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.7.0/firebase-firestore-compat.js"></script>
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone@7.23.5/babel.min.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Segoe UI',system-ui,sans-serif;min-height:100vh}
+@keyframes spin{to{transform:rotate(360deg)}}
+@keyframes fadeIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+@keyframes pop{0%{transform:scale(.8);opacity:0}100%{transform:scale(1);opacity:1}}
+.spin{animation:spin .8s linear infinite}
+.fade{animation:fadeIn .3s ease}
+.pop{animation:pop .2s ease}
+::-webkit-scrollbar{width:5px}
+::-webkit-scrollbar-thumb{background:#F4A7B9;border-radius:99px}
+input[type=range]{-webkit-appearance:none;height:4px;border-radius:99px;outline:none;background:#EDD8F0}
+input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:16px;height:16px;border-radius:50%;background:#F4A7B9;cursor:pointer}
+select,input,textarea,button{font-family:inherit}
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script>
+Babel.config = {presets: ["react"]};
+</script>
+<script type="text/babel">
+
+// ══════════════════════════════════════════
+// FIREBASE
+// ══════════════════════════════════════════
+firebase.initializeApp({
+  apiKey:"AIzaSyA-wJYJwvsb9JpUdaxwgCTLsPDJ4hZjj3E",
+  authDomain:"diario-de-leitura-46942.firebaseapp.com",
+  projectId:"diario-de-leitura-46942",
+  storageBucket:"diario-de-leitura-46942.firebasestorage.app",
+  messagingSenderId:"64955415252",
+  appId:"1:64955415252:web:9ef3e9cfe9cdd39b5a1941"
+});
+const auth = firebase.auth();
+const db   = firebase.firestore();
+// offline persistence desabilitada — causava travamento
+
+// ══════════════════════════════════════════
+// TEMAS
+// ══════════════════════════════════════════
+const LIGHT={
+  bg:"#FEF6F0",bgAlt:"#FDF0F7",card:"#FFFFFF",
+  rose:"#F4A7B9",roseDark:"#E07A96",roseLight:"#FCE4EC",
+  lav:"#C9B8E8",lavDark:"#A990D4",lavLight:"#EDE7F6",
+  mint:"#A8DCC8",mintDark:"#6CB89A",mintLight:"#E8F5EF",
+  butter:"#FFE082",butLight:"#FFF9E0",
+  sky:"#90CAF9",skyLight:"#E3F2FD",
+  text:"#4A3F5C",mid:"#7A6B8A",muted:"#B0A0C0",
+  border:"#EDD8F0",bMid:"#D4B8E0",
+  star:"#FFB300",red:"#EF5350",redLight:"#FFEBEE",
+  gray:"#9E9E9E",grayLight:"#F5F5F5",
+  head:"linear-gradient(135deg,#FCE4EC,#EDE7F6)",
+};
+const DARK={
+  bg:"#1A1625",bgAlt:"#221D30",card:"#2A2440",
+  rose:"#F4A7B9",roseDark:"#E07A96",roseLight:"#3D2535",
+  lav:"#C9B8E8",lavDark:"#A990D4",lavLight:"#2D2545",
+  mint:"#A8DCC8",mintDark:"#6CB89A",mintLight:"#1E3530",
+  butter:"#FFE082",butLight:"#35300F",
+  sky:"#90CAF9",skyLight:"#1A2535",
+  text:"#EDE7F6",mid:"#C9B8E8",muted:"#7A6B8A",
+  border:"#3D3555",bMid:"#4D4565",
+  star:"#FFB300",red:"#EF5350",redLight:"#3D1515",
+  gray:"#9E9E9E",grayLight:"#2A2440",
+  head:"linear-gradient(135deg,#2A1F35,#1F1A35)",
+};
+
+// ══════════════════════════════════════════
+// STATUS — cores e labels
+// ══════════════════════════════════════════
+const STATUS_CFG = {
+  "lendo":      {icon:"📖",label:"Lendo",      bg:"#FFF9E0",color:"#B8860B"},
+  "lido":       {icon:"✅",label:"Lido",       bg:"#E8F5EF",color:"#2E7D32"},
+  "quero ler":  {icon:"📚",label:"Quero ler",  bg:"#EDE7F6",color:"#6A1B9A"},
+  "pausado":    {icon:"⏸️",label:"Pausado",    bg:"#E3F2FD",color:"#1565C0"},
+  "abandonado": {icon:"❌",label:"Abandonado", bg:"#FFEBEE",color:"#C62828"},
+  "nao gostei": {icon:"🚫",label:"Não gostei", bg:"#F5F5F5",color:"#616161"},
+  "favorito":   {icon:"❤️",label:"Favorito",   bg:"#FCE4EC",color:"#C2185B"},
+};
+const STATUS_LIST = Object.keys(STATUS_CFG);
+
+// ══════════════════════════════════════════
+// SEGURANÇA
+// ══════════════════════════════════════════
+const _t={};
+function rateCheck(email){
+  const k=email.toLowerCase(),now=Date.now();
+  if(!_t[k])_t[k]={n:0,first:now,blocked:0};
+  const a=_t[k];
+  if(a.blocked>now)throw new Error(`Bloqueado por ${Math.ceil((a.blocked-now)/60000)} min.`);
+  if(now-a.first>900000){_t[k]={n:1,first:now,blocked:0};return;}
+  if(++a.n>=5){a.blocked=now+1800000;throw new Error("Bloqueado 30 min.");}
+}
+function rateReset(e){delete _t[e.toLowerCase()];}
+function pwCheck(p){
+  const e=[];
+  if(p.length<8)e.push("Mínimo 8 caracteres");
+  if(!/[A-Z]/.test(p))e.push("1 maiúscula");
+  if(!/[a-z]/.test(p))e.push("1 minúscula");
+  if(!/\d/.test(p))e.push("1 número");
+  if(!/[^A-Za-z0-9]/.test(p))e.push("1 especial");
+  return e;
+}
+function san(s){return String(s||"").replace(/[<>"'&]/g,"").trim().slice(0,500);}
+function emailOk(e){return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e);}
+async function auditLog(uid,action,det={}){
+  try{await db.collection("logs").add({uid,action,det,ts:firebase.firestore.FieldValue.serverTimestamp(),ua:navigator.userAgent.slice(0,150)});}catch{}
+}
+const FBE={"auth/user-not-found":"E-mail não encontrado.","auth/wrong-password":"Senha incorreta.","auth/invalid-email":"E-mail inválido.","auth/user-disabled":"Conta desativada.","auth/too-many-requests":"Muitas tentativas.","auth/email-already-in-use":"E-mail já usado.","auth/invalid-credential":"E-mail ou senha inválidos.","auth/network-request-failed":"Sem conexão."};
+const fbe=c=>FBE[c]||"Erro inesperado.";
+
+// ══════════════════════════════════════════
+// APIs LIVROS
+// ══════════════════════════════════════════
+const _cache={};
+async function buscarLivros(q){
+  if(_cache[q])return _cache[q];
+  const[ol,gb]=await Promise.all([_ol(q),_gb(q)]);
+  const seen=new Set(ol.map(r=>r.titulo.toLowerCase()));
+  const r=[...ol];
+  for(const x of gb)if(!seen.has(x.titulo.toLowerCase())&&r.length<12){seen.add(x.titulo.toLowerCase());r.push(x);}
+  return _cache[q]=r;
+}
+async function _ol(q){
+  try{
+    const d=await(await fetch(`https://openlibrary.org/search.json?q=${encodeURIComponent(q)}&fields=key,title,author_name,cover_i,first_publish_year,subject,number_of_pages_median,ia&limit=10`)).json();
+    const r=[],seen=new Set();
+    for(const x of d.docs||[]){
+      if(!x.cover_i)continue;
+      const titulo=x.title||q,k=titulo.toLowerCase();
+      if(seen.has(k))continue;seen.add(k);
+      r.push({id:`ol_${x.cover_i}`,titulo,autor:(x.author_name||[]).join(", ")||"—",
+        capa:`https://covers.openlibrary.org/b/id/${x.cover_i}-L.jpg`,
+        ano:x.first_publish_year?String(x.first_publish_year):"",
+        paginas:x.number_of_pages_median||0,genero:(x.subject||[]).slice(0,2),
+        sinopse:"",fonte:"OL",ia:(x.ia&&x.ia[0])||null});
+      if(r.length>=6)break;
+    }
+    return r;
+  }catch{return[];}
+}
+async function _gb(q){
+  try{
+    const d=await(await fetch(`https://www.googleapis.com/books/v1/volumes?q=${encodeURIComponent(q)}&maxResults=10`)).json();
+    const r=[],seen=new Set();
+    for(const item of d.items||[]){
+      const info=item.volumeInfo||{},img=info.imageLinks;
+      if(!img)continue;
+      const raw=img.extraLarge||img.large||img.medium||img.thumbnail;
+      if(!raw)continue;
+      const capa=raw.replace(/^http:\/\//,"https://").replace(/zoom=\d/,"zoom=3");
+      const titulo=info.title||q,k=titulo.toLowerCase();
+      if(seen.has(k))continue;seen.add(k);
+      r.push({id:item.id,titulo,autor:(info.authors||[]).join(", ")||"—",capa,
+        ano:info.publishedDate?info.publishedDate.slice(0,4):"",
+        paginas:info.pageCount||0,genero:info.categories||[],
+        sinopse:info.description||"",fonte:"GB",previa:info.previewLink||"",ia:null});
+      if(r.length>=6)break;
+    }
+    return r;
+  }catch{return[];}
+}
+async function capaCover(titulo,autor){
+  const k=`cv_${titulo}_${autor}`;
+  if(_cache[k]!==undefined)return _cache[k];
+  const r=await buscarLivros(`${titulo} ${autor}`);
+  return _cache[k]=r[0]?.capa||null;
+}
+async function buscarDownload(livro){
+  if(livro.ia){
+    try{
+      const d=await(await fetch(`https://archive.org/metadata/${livro.ia}/files`)).json();
+      const f=d.result||[];
+      const epub=f.find(x=>x.name?.endsWith(".epub"));
+      const pdf=f.find(x=>x.name?.endsWith(".pdf")&&!x.name.includes("_text"));
+      const txt=f.find(x=>x.name?.endsWith("_djvu.txt"));
+      return{ok:true,fonte:"Archive.org",ler:`https://archive.org/details/${livro.ia}`,
+        epub:epub?`https://archive.org/download/${livro.ia}/${epub.name}`:null,
+        pdf:pdf?`https://archive.org/download/${livro.ia}/${pdf.name}`:null,
+        txt:txt?`https://archive.org/download/${livro.ia}/${txt.name}`:null};
+    }catch{}
+  }
+  try{
+    const d=await(await fetch(`https://gutendex.com/books/?search=${encodeURIComponent(livro.titulo)}`)).json();
+    const g=(d.results||[]).find(b=>b.title?.toLowerCase().includes(livro.titulo.toLowerCase().slice(0,8)));
+    if(g){const f=g.formats||{};return{ok:true,fonte:"Gutenberg",
+      ler:f["text/html"]||`https://www.gutenberg.org/ebooks/${g.id}`,
+      epub:f["application/epub+zip"]||null,pdf:f["application/pdf"]||null,
+      txt:f["text/plain; charset=utf-8"]||null};}
+  }catch{}
+  return{ok:false};
+}
+
+// ══════════════════════════════════════════
+// CONSTANTES
+// ══════════════════════════════════════════
+const HOJE=new Date().toISOString().split("T")[0];
+const ANO=new Date().getFullYear();
+let _id=100; const gid=()=>String(++_id);
+
+const GENEROS=["Romance","Dark Romance","Paranormal","Fantasia","Suspense","Máfia","Contemporâneo","Médico","Histórico","Clássico","Infantil","Jovem Adulto","Mangá","Ficção Científica","Terror","Autoajuda","Biografia","Policial","Poesia","Conto"];
+const HUMORES=["😍","🥹","🔥","😭","😤","🤯","💕","✨","😴","🎉","📖","💀","🫶","🌙","⭐"];
+const MESES=["Janeiro","Fevereiro","Março","Abril","Maio","Junho","Julho","Agosto","Setembro","Outubro","Novembro","Dezembro"];
+
+const CONQUISTAS=[
+  {id:"c1",ico:"🏆",nome:"Primeira Leitura",desc:"Leu o 1º livro",check:b=>b.filter(x=>x.status==="lido").length>=1},
+  {id:"c2",ico:"🥇",nome:"10 Livros",desc:"Leu 10 livros",check:b=>b.filter(x=>x.status==="lido").length>=10},
+  {id:"c3",ico:"🎖️",nome:"50 Livros",desc:"Leu 50 livros",check:b=>b.filter(x=>x.status==="lido").length>=50},
+  {id:"c4",ico:"💎",nome:"100 Livros",desc:"Leu 100 livros",check:b=>b.filter(x=>x.status==="lido").length>=100},
+  {id:"c5",ico:"📄",nome:"1.000 Páginas",desc:"1000 páginas lidas",check:b=>b.filter(x=>x.status==="lido").reduce((s,x)=>s+(x.paginas||0),0)>=1000},
+  {id:"c6",ico:"📚",nome:"10.000 Páginas",desc:"10000 páginas",check:b=>b.filter(x=>x.status==="lido").reduce((s,x)=>s+(x.paginas||0),0)>=10000},
+  {id:"c7",ico:"❤️",nome:"Colecionador",desc:"5 favoritos",check:b=>b.filter(x=>x.fav).length>=5},
+  {id:"c8",ico:"🎭",nome:"Eclético",desc:"5 gêneros diferentes",check:b=>{const g=new Set(b.filter(x=>x.status==="lido").flatMap(x=>x.genero||[]));return g.size>=5;}},
+  {id:"c9",ico:"✍️",nome:"Crítico",desc:"5 resenhas",check:b=>b.filter(x=>x.resenha?.trim()).length>=5},
+  {id:"c10",ico:"🌟",nome:"Leitor Assíduo",desc:"Leu 7 dias seguidos",check:()=>false},
+  {id:"c11",ico:"📅",nome:"Meta Anual",desc:"Cumpriu a meta do ano",check:()=>false},
+  {id:"c12",ico:"🏅",nome:"Maratonista",desc:"20 livros em 1 mês",check:()=>false},
+];
+
+const DESAFIOS=[
+  {id:"d1",ico:"📅",nome:"12 Livros no Ano",desc:"Leia 12 livros em um ano",check:b=>b.filter(x=>x.status==="lido"&&x.finalizadoEm?.startsWith(String(ANO))).length>=12},
+  {id:"d2",ico:"📜",nome:"Um Clássico",desc:"Leia um livro clássico",check:b=>b.some(x=>x.status==="lido"&&(x.genero||[]).includes("Clássico"))},
+  {id:"d3",ico:"📖",nome:"500 Páginas",desc:"Leia um livro com +500 págs",check:b=>b.some(x=>x.status==="lido"&&(x.paginas||0)>=500)},
+  {id:"d4",ico:"🇧🇷",nome:"Autor Nacional",desc:"Leia um autor brasileiro",check:()=>false},
+  {id:"d5",ico:"👥",nome:"Indicação",desc:"Leia um livro indicado",check:()=>false},
+  {id:"d6",ico:"🌍",nome:"Autor Estrangeiro",desc:"Leia um autor internacional",check:()=>false},
+  {id:"d7",ico:"📚",nome:"Série Completa",desc:"Conclua uma série",check:()=>false},
+  {id:"d8",ico:"⭐",nome:"5 Estrelas",desc:"Dê nota 5 para 3 livros",check:b=>b.filter(x=>x.nota===5).length>=3},
+];
+
+const METAS_DEFAULT={anual:50,mensal:5,semanal:1,paginas:10000};
+
+// ══════════════════════════════════════════
+// HOOKS
+// ══════════════════════════════════════════
+const {useState,useEffect,useRef,useCallback,useMemo}=React;
+
+// ══════════════════════════════════════════
+// COMPONENTES BASE
+// ══════════════════════════════════════════
+const Estrelas=({val=0,set,tam=18,ro=false})=>(
+  <div style={{display:"flex",gap:2}}>
+    {[1,2,3,4,5].map(n=>(
+      <span key={n} onClick={()=>!ro&&set?.(n)}
+        style={{cursor:ro?"default":"pointer",color:n<=val?"#FFB300":"#D4B8E0",fontSize:tam,lineHeight:1,transition:"transform .15s",display:"inline-block"}}
+        onMouseEnter={e=>{if(!ro)e.target.style.transform="scale(1.3)"}}
+        onMouseLeave={e=>{e.target.style.transform="scale(1)"}}>★</span>
+    ))}
+  </div>
+);
+
+const Barra=({val,cor,h=6,T})=>(
+  <div style={{background:T.border,borderRadius:99,height:h,overflow:"hidden"}}>
+    <div style={{width:`${Math.min(100,Math.max(0,val))}%`,background:cor||T.rose,height:"100%",borderRadius:99,transition:"width .5s"}}/>
+  </div>
+);
+
+const Pill=({status,sm=false})=>{
+  const cfg=STATUS_CFG[status]||STATUS_CFG["quero ler"];
+  return(
+    <span style={{background:cfg.bg,color:cfg.color,fontSize:sm?9:10,fontWeight:700,padding:sm?"2px 7px":"3px 9px",borderRadius:99,whiteSpace:"nowrap",display:"inline-flex",alignItems:"center",gap:3}}>
+      <span style={{fontSize:sm?9:11}}>{cfg.icon}</span>{cfg.label}
+    </span>
+  );
+};
+
+const Btn=({ch,onClick,v="p",sm=false,dis=false,T,sx={},type="button"})=>{
+  const V={
+    p:{bg:`linear-gradient(135deg,${T.rose},${T.roseDark})`,c:"#fff",b:"none",s:`0 3px 10px ${T.rose}60`},
+    s:{bg:T.card,c:T.text,b:`1.5px solid ${T.border}`,s:"none"},
+    d:{bg:T.redLight,c:T.red,b:`1px solid ${T.red}30`,s:"none"},
+    lav:{bg:`linear-gradient(135deg,${T.lav},${T.lavDark})`,c:"#fff",b:"none",s:`0 3px 10px ${T.lav}60`},
+    mint:{bg:`linear-gradient(135deg,${T.mint},${T.mintDark})`,c:"#fff",b:"none",s:`0 3px 10px ${T.mint}60`},
+  };
+  const x=V[v]||V.p;
+  return(
+    <button type={type} onClick={onClick} disabled={dis}
+      style={{background:x.bg,color:x.c,border:x.b,borderRadius:12,padding:sm?"6px 14px":"10px 20px",fontWeight:700,fontSize:sm?11:13,cursor:dis?"not-allowed":"pointer",boxShadow:x.s,opacity:dis?.5:1,transition:"all .2s",...sx}}>
+      {ch}
+    </button>
+  );
+};
+
+const Campo=({label,val,set,type="text",ph,multi=false,rows=3,T})=>(
+  <div style={{display:"flex",flexDirection:"column",gap:5}}>
+    {label&&<label style={{color:T.mid,fontSize:12,fontWeight:700}}>{label}</label>}
+    {multi
+      ?<textarea value={val} onChange={e=>set(e.target.value)} placeholder={ph} rows={rows}
+          style={{background:T.bgAlt,border:`1.5px solid ${T.border}`,borderRadius:12,padding:"10px 14px",color:T.text,fontSize:13,outline:"none",resize:"vertical",width:"100%",boxSizing:"border-box"}}/>
+      :<input type={type} value={val} onChange={e=>set(e.target.value)} placeholder={ph}
+          style={{background:T.bgAlt,border:`1.5px solid ${T.border}`,borderRadius:12,padding:"10px 14px",color:T.text,fontSize:13,outline:"none",width:"100%",boxSizing:"border-box"}}/>
+    }
+  </div>
+);
+
+const Capa=({livro,w="100%",h="100%",r=10,T})=>{
+  const[src,setSrc]=useState(livro.capa);
+  const[st,setSt]=useState(livro.capa?"ok":"load");
+  useEffect(()=>{
+    if(livro.capa){setSrc(livro.capa);setSt("ok");return;}
+    let dead=false;
+    capaCover(livro.titulo,livro.autor).then(u=>{
+      if(dead)return;
+      if(u){setSrc(u);setSt("ok");}else setSt("err");
+    });
+    return()=>{dead=true;};
+  },[livro.id,livro.capa]);
+  const base={width:w,height:h,borderRadius:r,display:"flex",alignItems:"center",justifyContent:"center",overflow:"hidden",flexShrink:0};
+  if(st==="load")return<div style={{...base,background:T.roseLight}}><div className="spin" style={{width:20,height:20,border:`2px solid ${T.rose}`,borderTopColor:"transparent",borderRadius:"50%"}}/></div>;
+  if(st==="err")return<div style={{...base,background:`linear-gradient(135deg,${T.lavLight},${T.roseLight})`,flexDirection:"column"}}><span style={{fontSize:28}}>📚</span></div>;
+  return<img src={src} alt={livro.titulo} style={{...base,objectFit:"cover"}} onError={()=>setSt("err")}/>;
+};
+
+const Modal=({children,onClose,T,maxW=520})=>(
+  <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.65)",backdropFilter:"blur(6px)",zIndex:9000,display:"flex",alignItems:"center",justifyContent:"center",padding:16}} onClick={onClose}>
+    <div onClick={e=>e.stopPropagation()} style={{background:T.card,borderRadius:24,width:"100%",maxWidth:maxW,maxHeight:"94vh",display:"flex",flexDirection:"column",boxShadow:"0 32px 80px rgba(0,0,0,.4)",overflow:"hidden"}}>
+      {children}
+    </div>
+  </div>
+);
+
+const ModalHead=({title,sub,onClose,T})=>(
+  <div style={{padding:"16px 20px 0",borderBottom:`1px solid ${T.border}`,background:T.head,flexShrink:0}}>
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
+      <div>
+        {sub&&<div style={{color:T.roseDark,fontSize:10,fontWeight:800,textTransform:"uppercase",letterSpacing:1,marginBottom:2}}>{sub}</div>}
+        <div style={{color:T.text,fontSize:17,fontWeight:900}}>{title}</div>
+      </div>
+      <button onClick={onClose} style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:"50%",width:34,height:34,cursor:"pointer",fontSize:16,color:T.mid,display:"flex",alignItems:"center",justifyContent:"center"}}>✕</button>
+    </div>
+  </div>
+);
+
+// ══════════════════════════════════════════
+// COVER PICKER
+// ══════════════════════════════════════════
+
+const MiniCapaCard=({r,sel,onSel,T})=>{
+  const[ok,setOk]=useState(true);const s=sel?.id===r.id;
+  return(
+    <div onClick={()=>onSel(r)} style={{cursor:"pointer",borderRadius:12,overflow:"hidden",border:`2px solid ${s?T.rose:T.border}`,background:T.card,transform:s?"scale(1.04)":"scale(1)",transition:"all .2s"}}>
+      <div style={{position:"relative",paddingBottom:"148%",background:T.roseLight}}>
+        {ok?<img src={r.capa} alt="" style={{position:"absolute",inset:0,width:"100%",height:"100%",objectFit:"cover"}} onError={()=>setOk(false)}/>
+           :<div style={{position:"absolute",inset:0,display:"flex",alignItems:"center",justifyContent:"center"}}><span style={{fontSize:24}}>📚</span></div>}
+        {s&&<div style={{position:"absolute",top:5,right:5,background:T.rose,borderRadius:"50%",width:20,height:20,display:"flex",alignItems:"center",justifyContent:"center"}}><span style={{color:"#fff",fontSize:12,fontWeight:900}}>✓</span></div>}
+      </div>
+      <div style={{padding:"5px 6px 7px"}}>
+        <div style={{color:T.text,fontSize:9,fontWeight:700,lineHeight:1.3,overflow:"hidden",display:"-webkit-box",WebkitLineClamp:2,WebkitBoxOrient:"vertical"}}>{r.titulo}</div>
+        <div style={{color:T.muted,fontSize:8}}>{r.ano}</div>
+      </div>
+    </div>
+  );
+};
+
+const CapaPicker=({query0="",onSelect,onClose,T})=>{
+  const[aba,setAba]=useState("net");
+  const[q,setQ]=useState(query0);
+  const[res,setRes]=useState([]);
+  const[load,setLoad]=useState(false);
+  const[buscou,setBuscou]=useState(false);
+  const[sel,setSel]=useState(null);
+  const[preview,setPrev]=useState(null);
+  const uid=useRef("cp"+Math.random().toString(36).slice(2,9)).current;
+  const inp=useRef();
+
+  const buscar=useCallback(async v=>{
+    const t=(v||q||"").trim();if(!t)return;
+    setLoad(true);setBuscou(true);setSel(null);
+    setRes(await buscarLivros(t));setLoad(false);
+  },[q]);
+
+  useEffect(()=>{
+    if(query0)buscar(query0);
+    setTimeout(()=>inp.current?.focus(),200);
+  },[]);
+
+  const onFile=e=>{
+    const f=e.target.files?.[0];if(!f)return;
+    const rd=new FileReader();
+    rd.onload=ev=>{setPrev(ev.target.result);setAba("cel");};
+    rd.readAsDataURL(f);
+    e.target.value="";
+  };
+
+  return(
+    <>
+      <input id={`${uid}gal`} type="file" accept="image/*"
+        style={{position:"fixed",left:"-9999px",top:"0px",width:"1px",height:"1px",opacity:0}}
+        onChange={onFile}/>
+      <input id={`${uid}cam`} type="file" accept="image/*" capture="environment"
+        style={{position:"fixed",left:"-9999px",top:"0px",width:"1px",height:"1px",opacity:0}}
+        onChange={onFile}/>
+      <Modal onClose={onClose} T={T}>
+        <ModalHead title="📸 Escolher capa" onClose={onClose} T={T}/>
+        <div style={{borderBottom:`1px solid ${T.border}`,display:"flex",background:T.head,flexShrink:0}}>
+          {[{id:"net",l:"🌐 Online"},{id:"cel",l:"📱 Galeria / Câmera"}].map(a=>(
+            <button key={a.id} onClick={()=>setAba(a.id)} style={{flex:1,padding:"10px 0",background:"none",border:"none",cursor:"pointer",color:aba===a.id?T.roseDark:T.mid,fontWeight:aba===a.id?800:600,fontSize:12,borderBottom:`3px solid ${aba===a.id?T.rose:"transparent"}`,transition:"all .2s"}}>
+              {a.l}
+            </button>
+          ))}
+        </div>
+
+        {aba==="net"&&(
+          <>
+            <div style={{padding:"12px 20px 0",flexShrink:0}}>
+              <div style={{display:"flex",gap:8,marginBottom:6}}>
+                <input ref={inp} value={q} onChange={e=>setQ(e.target.value)}
+                  onKeyDown={e=>{if(e.key==="Enter"){e.stopPropagation();buscar(q);}}}
+                  placeholder="Nome do livro ou autor..."
+                  style={{flex:1,background:T.bgAlt,border:`1.5px solid ${T.bMid}`,borderRadius:12,padding:"10px 14px",color:T.text,fontSize:13,outline:"none",boxSizing:"border-box"}}/>
+                <button
+                  onClick={e=>{e.preventDefault();e.stopPropagation();buscar(q);}}
+                  disabled={load}
+                  type="button"
+                  style={{background:load?T.border:`linear-gradient(135deg,${T.rose},${T.roseDark})`,color:"#fff",border:"none",borderRadius:12,padding:"0 18px",fontWeight:800,fontSize:13,cursor:load?"not-allowed":"pointer",flexShrink:0,minWidth:80}}>
+                  {load?"⏳ ...":"🔍 Buscar"}
+                </button>
+              </div>
+              <div style={{color:T.muted,fontSize:11,marginBottom:10}}>🌎 Open Library + Google Books</div>
+            </div>
+            <div style={{flex:1,overflowY:"auto",padding:"0 20px 20px"}}>
+              {load&&<div style={{textAlign:"center",padding:"40px 0"}}><div className="spin" style={{width:40,height:40,border:`3px solid ${T.rose}`,borderTopColor:"transparent",borderRadius:"50%",margin:"0 auto 10px"}}/><div style={{color:T.muted}}>Buscando... 📚</div></div>}
+              {!load&&buscou&&!res.length&&<div style={{textAlign:"center",padding:"40px 0",color:T.muted}}><div style={{fontSize:40,marginBottom:8}}>🔍</div>Nenhuma capa encontrada</div>}
+              {!load&&!buscou&&<div style={{textAlign:"center",padding:"32px 0"}}><div style={{fontSize:48,marginBottom:8}}>🔍</div><div style={{color:T.text,fontWeight:800}}>Digite o nome do livro</div></div>}
+              {!load&&res.length>0&&(
+                <div>
+                  <div style={{color:T.muted,fontSize:11,marginBottom:10}}>{res.length} capas — toque para selecionar</div>
+                  <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10}}>
+                    {res.map((r,i)=>{
+                      const[ok,setOk]=useState(true);const s=sel?.id===r.id;
+                      return(
+                        <div key={r.id||i} onClick={()=>setSel(r)} style={{cursor:"pointer",borderRadius:12,overflow:"hidden",border:`2px solid ${s?T.rose:T.border}`,background:T.card,transform:s?"scale(1.04)":"scale(1)",transition:"all .2s"}}>
+                          <div style={{position:"relative",paddingBottom:"148%",background:T.roseLight}}>
+                            {ok?<img src={r.capa} alt="" style={{position:"absolute",inset:0,width:"100%",height:"100%",objectFit:"cover"}} onError={()=>setOk(false)}/>
+                               :<div style={{position:"absolute",inset:0,display:"flex",alignItems:"center",justifyContent:"center"}}><span style={{fontSize:24}}>📚</span></div>}
+                            {s&&<div style={{position:"absolute",top:5,right:5,background:T.rose,borderRadius:"50%",width:20,height:20,display:"flex",alignItems:"center",justifyContent:"center"}}><span style={{color:"#fff",fontSize:12,fontWeight:900}}>✓</span></div>}
+                          </div>
+                          <div style={{padding:"5px 6px 7px"}}>
+                            <div style={{color:T.text,fontSize:9,fontWeight:700,lineHeight:1.3,overflow:"hidden",display:"-webkit-box",WebkitLineClamp:2,WebkitBoxOrient:"vertical"}}>{r.titulo}</div>
+                            <div style={{color:T.muted,fontSize:8}}>{r.ano}</div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+            </div>
+            {sel&&(
+              <div style={{padding:"12px 20px",borderTop:`1px solid ${T.border}`,background:T.roseLight,display:"flex",gap:12,alignItems:"center",flexShrink:0}}>
+                <img src={sel.capa} alt="" style={{width:36,height:52,objectFit:"cover",borderRadius:8}} onError={e=>e.target.style.display="none"}/>
+                <div style={{flex:1,minWidth:0}}>
+                  <div style={{color:T.text,fontSize:12,fontWeight:700,overflow:"hidden",whiteSpace:"nowrap",textOverflow:"ellipsis"}}>{sel.titulo}</div>
+                  <div style={{color:T.muted,fontSize:11}}>{sel.autor}</div>
+                </div>
+                <Btn ch="Usar ✓" onClick={()=>onSelect(sel)} T={T}/>
+              </div>
+            )}
+          </>
+        )}
+
+        {aba==="cel"&&(
+          <div style={{flex:1,overflowY:"auto",padding:24,display:"flex",flexDirection:"column",alignItems:"center",gap:16}}>
+            {preview?(
+              <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:14,width:"100%"}}>
+                <div style={{width:140,height:207,borderRadius:14,overflow:"hidden",boxShadow:"0 8px 28px rgba(0,0,0,.2)",border:`3px solid ${T.rose}`}}>
+                  <img src={preview} alt="Capa" style={{width:"100%",height:"100%",objectFit:"cover"}}/>
+                </div>
+                <div style={{color:T.text,fontSize:13,fontWeight:700}}>Foto selecionada! ✨</div>
+                <div style={{display:"flex",gap:10,width:"100%",maxWidth:280}}>
+                  <label htmlFor={`${uid}gal`} style={{flex:1,background:T.bgAlt,color:T.mid,border:`1.5px solid ${T.border}`,borderRadius:12,padding:"10px 0",fontWeight:700,fontSize:12,cursor:"pointer",textAlign:"center",display:"block"}}>🔄 Trocar</label>
+                  <button onClick={()=>onSelect({capa:preview,titulo:"",autor:"",ano:"",paginas:0,genero:[],sinopse:""})}
+                    style={{flex:1,background:`linear-gradient(135deg,${T.rose},${T.roseDark})`,color:"#fff",border:"none",borderRadius:12,padding:"10px 0",fontWeight:800,fontSize:12,cursor:"pointer"}}>
+                    ✓ Usar esta
+                  </button>
+                </div>
+              </div>
+            ):(
+              <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:14,width:"100%",maxWidth:300}}>
+                <div style={{fontSize:52}}>📱</div>
+                <div style={{color:T.text,fontSize:15,fontWeight:800,textAlign:"center"}}>Escolha uma foto</div>
+                <div style={{color:T.muted,fontSize:13,textAlign:"center",lineHeight:1.6}}>Selecione da galeria ou fotografe a capa</div>
+                <label htmlFor={`${uid}gal`} style={{width:"100%",background:`linear-gradient(135deg,${T.lav},${T.lavDark})`,color:"#fff",borderRadius:16,padding:"16px 0",fontWeight:800,fontSize:14,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",gap:10,boxSizing:"border-box"}}>
+                  <span style={{fontSize:20}}>🖼️</span> Abrir galeria
+                </label>
+                <label htmlFor={`${uid}cam`} style={{width:"100%",background:`linear-gradient(135deg,${T.mint},${T.mintDark})`,color:"#fff",borderRadius:16,padding:"16px 0",fontWeight:800,fontSize:14,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",gap:10,boxSizing:"border-box"}}>
+                  <span style={{fontSize:20}}>📷</span> Tirar foto
+                </label>
+              </div>
+            )}
+          </div>
+        )}
+      </Modal>
+    </>
+  );
+};
+
+// ══════════════════════════════════════════
+// LOGIN
+// ══════════════════════════════════════════
+const TelaLogin=()=>{
+  const T=LIGHT;
+  const[email,setEmail]=useState("");const[senha,setSenha]=useState("");
+  const[erro,setErro]=useState("");const[info,setInfo]=useState("");
+  const[load,setLoad]=useState(false);const[verS,setVerS]=useState(false);const[esq,setEsq]=useState(false);
+  const entrar=async e=>{
+    e.preventDefault();setErro("");setInfo("");
+    if(!emailOk(email)){setErro("E-mail inválido.");return;}
+    setLoad(true);
+    try{
+      if(esq){await auth.sendPasswordResetEmail(email);setInfo("E-mail de recuperação enviado!");setEsq(false);}
+      else{rateCheck(email);await auth.signInWithEmailAndPassword(email,senha);rateReset(email);await auditLog(auth.currentUser?.uid,"LOGIN",{email});}
+    }catch(er){await auditLog("anon","FAIL",{email});setErro(er.message||fbe(er.code));}
+    finally{setLoad(false);}
+  };
+  return(
+    <div style={{minHeight:"100vh",background:T.head,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
+      <div style={{background:T.card,borderRadius:24,width:"100%",maxWidth:380,padding:"36px 28px",boxShadow:"0 24px 64px rgba(74,63,92,.2)"}}>
+        <div style={{textAlign:"center",marginBottom:28}}>
+          <div style={{fontSize:56,marginBottom:8}}>📖</div>
+          <div style={{color:T.text,fontSize:22,fontWeight:900}}>Diário de Leitura</div>
+          <div style={{color:T.muted,fontSize:13,marginTop:4}}>{esq?"Recuperar senha":"Entre na sua conta"}</div>
+        </div>
+        {erro&&<div style={{background:T.redLight,border:`1px solid ${T.red}30`,borderRadius:10,padding:"10px 14px",marginBottom:14,color:T.red,fontSize:13}}>⚠️ {erro}</div>}
+        {info&&<div style={{background:T.mintLight,border:`1px solid ${T.mint}`,borderRadius:10,padding:"10px 14px",marginBottom:14,color:T.mintDark,fontSize:13}}>✓ {info}</div>}
+        <form onSubmit={entrar} style={{display:"flex",flexDirection:"column",gap:14}}>
+          <Campo label="E-mail" val={email} set={v=>setEmail(v.trim())} type="email" ph="seu@email.com" T={T}/>
+          {!esq&&(
+            <div>
+              <label style={{color:T.mid,fontSize:12,fontWeight:700,display:"block",marginBottom:5}}>Senha</label>
+              <div style={{position:"relative"}}>
+                <input type={verS?"text":"password"} value={senha} onChange={e=>setSenha(e.target.value)} placeholder="Sua senha" required
+                  style={{width:"100%",background:T.bgAlt,border:`1.5px solid ${T.border}`,borderRadius:12,padding:"10px 40px 10px 14px",color:T.text,fontSize:13,outline:"none",boxSizing:"border-box"}}/>
+                <button type="button" onClick={()=>setVerS(v=>!v)} style={{position:"absolute",right:10,top:"50%",transform:"translateY(-50%)",background:"none",border:"none",cursor:"pointer",fontSize:18,color:T.muted}}>{verS?"🙈":"👁️"}</button>
+              </div>
+            </div>
+          )}
+          <button type="submit" disabled={load}
+            style={{background:load?T.border:`linear-gradient(135deg,${T.rose},${T.roseDark})`,color:"#fff",border:"none",borderRadius:14,padding:"14px 0",fontWeight:800,fontSize:15,cursor:load?"not-allowed":"pointer",transition:"all .2s"}}>
+            {load?"⏳ Aguarde...":esq?"📧 Enviar e-mail":"🔐 Entrar"}
+          </button>
+          <button type="button" onClick={()=>{setEsq(v=>!v);setErro("");setInfo("");}}
+            style={{background:"none",border:"none",color:T.lavDark,fontSize:13,cursor:"pointer",textDecoration:"underline",textAlign:"center"}}>
+            {esq?"← Voltar":"Esqueci minha senha"}
+          </button>
+        </form>
+        <div style={{marginTop:20,padding:"12px",background:T.lavLight,borderRadius:10,fontSize:11,color:T.mid,textAlign:"center",lineHeight:1.6}}>
+          🔒 Conexão segura · Contas criadas pelo administrador
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ══════════════════════════════════════════
+// ADMIN
+// ══════════════════════════════════════════
+const TelaAdmin=({user,perfil,sair})=>{
+  const T=LIGHT;
+  const[aba,setAba]=useState("users");
+  const[users,setUsers]=useState([]);const[logs,setLogs]=useState([]);
+  const[load,setLoad]=useState(false);const[msg,setMsg]=useState({t:"",m:""});
+  const[nNome,setNNome]=useState("");const[nEmail,setNEmail]=useState("");
+  const[nSenha,setNSenha]=useState("");const[nRole,setNRole]=useState("user");const[pErros,setPErros]=useState([]);
+  const ok=m=>{setMsg({t:"ok",m});setTimeout(()=>setMsg({t:"",m:""}),5000);};
+  const er=m=>{setMsg({t:"err",m});setTimeout(()=>setMsg({t:"",m:""}),6000);};
+  const loadU=async()=>{const s=await db.collection("users").get();setUsers(s.docs.map(d=>({id:d.id,...d.data()})));};
+  const loadL=async()=>{try{const s=await db.collection("logs").orderBy("ts","desc").limit(50).get();setLogs(s.docs.map(d=>({id:d.id,...d.data()})));}catch{setLogs([]);}};
+  useEffect(()=>{loadU();},[]);
+  useEffect(()=>{if(aba==="logs")loadL();},[aba]);
+
+  const criarUser=async e=>{
+    e.preventDefault();
+    if(!emailOk(nEmail)){er("E-mail inválido.");return;}
+    const erros=pwCheck(nSenha);setPErros(erros);if(erros.length)return;
+    setLoad(true);
+    try{
+      const c=await auth.createUserWithEmailAndPassword(nEmail,nSenha);
+      await c.user.sendEmailVerification();
+      await db.collection("users").doc(c.user.uid).set({nome:san(nNome),email:nEmail.toLowerCase(),role:nRole,bloqueado:false,criadoPor:user.uid,criadoEm:firebase.firestore.FieldValue.serverTimestamp()});
+      await auditLog(user.uid,"CRIAR_USER",{email:nEmail,role:nRole});
+      ok(`Usuário "${nEmail}" criado!`);setNNome("");setNEmail("");setNSenha("");setNRole("user");setPErros([]);loadU();
+    }catch(e){er(fbe(e.code)||e.message);}finally{setLoad(false);}
+  };
+  const mudarRole=async(uid,role)=>{await db.collection("users").doc(uid).update({role,atEm:firebase.firestore.FieldValue.serverTimestamp()});await auditLog(user.uid,"ROLE",{uid,role});ok("Papel alterado!");loadU();};
+  const bloquear=async(uid,bl)=>{await db.collection("users").doc(uid).update({bloqueado:!bl});await auditLog(user.uid,bl?"DESBLOQ":"BLOQ",{uid});ok(bl?"Desbloqueado!":"Bloqueado!");loadU();};
+  const remover=async(uid,email)=>{if(!confirm(`Remover ${email}?`))return;await db.collection("users").doc(uid).delete();await auditLog(user.uid,"REMOVER",{uid,email});ok("Removido.");loadU();};
+
+  const ABAS=[{id:"users",l:"👥 Usuários"},{id:"novo",l:"➕ Novo"},{id:"logs",l:"📋 Logs"},{id:"senha",l:"🔑 Senha"}];
+
+  return(
+    <div style={{minHeight:"100vh",background:T.bg}}>
+      <div style={{background:T.head,borderBottom:`1px solid ${T.border}`,position:"sticky",top:0,zIndex:100}}>
+        <div style={{maxWidth:900,margin:"0 auto",padding:"0 16px",display:"flex",alignItems:"center",gap:12,height:54}}>
+          <span style={{fontSize:20}}>🛡️</span>
+          <div style={{flex:1}}><div style={{color:T.text,fontSize:14,fontWeight:900}}>Painel Administrador</div><div style={{color:T.muted,fontSize:11}}>{perfil?.nome||user?.email}</div></div>
+          <button onClick={()=>{auth.signOut().then(()=>{window.location.reload();});}} style={{background:"#FFEBEE",color:"#EF5350",border:"none",borderRadius:10,padding:"7px 14px",fontWeight:700,fontSize:12,cursor:"pointer"}}>Sair 🚪</button>
+        </div>
+        <div style={{maxWidth:900,margin:"0 auto",padding:"0 16px",display:"flex",overflowX:"auto",scrollbarWidth:"none"}}>
+          {ABAS.map(a=><button key={a.id} onClick={()=>setAba(a.id)} style={{padding:"10px 14px",background:"none",border:"none",cursor:"pointer",color:aba===a.id?T.roseDark:T.mid,fontWeight:aba===a.id?800:600,fontSize:12,borderBottom:`3px solid ${aba===a.id?T.rose:"transparent"}`,whiteSpace:"nowrap"}}>{a.l}</button>)}
+        </div>
+      </div>
+      <div style={{maxWidth:900,margin:"0 auto",padding:"20px 16px 60px"}}>
+        {msg.m&&<div style={{background:msg.t==="ok"?T.mintLight:T.redLight,color:msg.t==="ok"?T.mintDark:T.red,borderRadius:10,padding:"11px 14px",marginBottom:16,fontSize:13,fontWeight:600}}>{msg.t==="ok"?"✓ ":"⚠️ "}{msg.m}</div>}
+
+        {aba==="users"&&(
+          <div>
+            <div style={{color:T.text,fontSize:17,fontWeight:900,marginBottom:14}}>👥 Usuários ({users.length})</div>
+            {users.map(u=>(
+              <div key={u.id} style={{background:T.card,borderRadius:14,padding:"14px 16px",border:`1.5px solid ${u.bloqueado?T.red:T.border}`,marginBottom:10,display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
+                <div style={{flex:1,minWidth:0}}>
+                  <div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap",marginBottom:3}}>
+                    <span style={{color:T.text,fontSize:14,fontWeight:700}}>{u.nome||"(sem nome)"}</span>
+                    <span style={{background:u.role==="admin"?T.lavLight:T.mintLight,color:u.role==="admin"?T.lavDark:T.mintDark,fontSize:9,fontWeight:800,padding:"2px 7px",borderRadius:99}}>{u.role==="admin"?"🛡️ Admin":"👤 Usuário"}</span>
+                    {u.bloqueado&&<span style={{background:T.redLight,color:T.red,fontSize:9,fontWeight:800,padding:"2px 7px",borderRadius:99}}>🔒 Bloqueado</span>}
+                    {u.id===user?.uid&&<span style={{background:T.butLight,color:"#B8860B",fontSize:9,fontWeight:800,padding:"2px 7px",borderRadius:99}}>Você</span>}
+                  </div>
+                  <div style={{color:T.muted,fontSize:12}}>{u.email}</div>
+                  <div style={{color:T.muted,fontSize:11,marginTop:2}}>Criado: {u.criadoEm?.toDate?u.criadoEm.toDate().toLocaleDateString("pt-BR"):"—"}</div>
+                </div>
+                {u.id!==user?.uid&&(
+                  <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+                    <select value={u.role} onChange={e=>mudarRole(u.id,e.target.value)} style={{background:T.lavLight,color:T.lavDark,border:"none",borderRadius:8,padding:"6px 8px",fontSize:11,fontWeight:700,cursor:"pointer"}}>
+                      <option value="user">👤 Usuário</option><option value="admin">🛡️ Admin</option>
+                    </select>
+                    <button onClick={()=>bloquear(u.id,u.bloqueado)} style={{background:u.bloqueado?T.mintLight:T.redLight,color:u.bloqueado?T.mintDark:T.red,border:"none",borderRadius:8,padding:"6px 8px",fontSize:11,fontWeight:700,cursor:"pointer"}}>{u.bloqueado?"🔓":"🔒"}</button>
+                    <button onClick={()=>remover(u.id,u.email)} style={{background:T.redLight,color:T.red,border:"none",borderRadius:8,padding:"6px 8px",fontSize:11,fontWeight:700,cursor:"pointer"}}>🗑️</button>
+                  </div>
+                )}
+              </div>
+            ))}
+            {!users.length&&<div style={{color:T.muted,textAlign:"center",padding:"32px 0"}}>Nenhum usuário cadastrado.</div>}
+          </div>
+        )}
+
+        {aba==="novo"&&(
+          <div style={{maxWidth:440}}>
+            <div style={{color:T.text,fontSize:17,fontWeight:900,marginBottom:16}}>➕ Criar novo usuário</div>
+            <form onSubmit={criarUser} style={{background:T.card,borderRadius:18,padding:22,border:`1.5px solid ${T.border}`,display:"flex",flexDirection:"column",gap:13}}>
+              <Campo label="Nome completo" val={nNome} set={setNNome} ph="Nome" T={T}/>
+              <Campo label="E-mail *" val={nEmail} set={setNEmail} type="email" ph="email@exemplo.com" T={T}/>
+              <Campo label="Senha *" val={nSenha} set={v=>{setNSenha(v);setPErros(pwCheck(v));}} type="password" ph="Mínimo 8 caracteres" T={T}/>
+              {pErros.length>0&&<div style={{background:T.redLight,borderRadius:10,padding:"10px 12px"}}>{pErros.map((e,i)=><div key={i} style={{color:T.red,fontSize:12}}>• {e}</div>)}</div>}
+              <div>
+                <label style={{color:T.mid,fontSize:12,fontWeight:700,display:"block",marginBottom:5}}>Papel</label>
+                <select value={nRole} onChange={e=>setNRole(e.target.value)} style={{width:"100%",background:T.bgAlt,border:`1.5px solid ${T.border}`,borderRadius:10,padding:"9px 12px",color:T.text,fontSize:13}}>
+                  <option value="user">👤 Usuário</option><option value="admin">🛡️ Administrador</option>
+                </select>
+              </div>
+              <button type="submit" disabled={load} style={{background:load?T.border:`linear-gradient(135deg,${T.rose},${T.roseDark})`,color:"#fff",border:"none",borderRadius:12,padding:"13px 0",fontWeight:800,fontSize:14,cursor:load?"not-allowed":"pointer"}}>{load?"⏳ Criando...":"✨ Criar usuário"}</button>
+            </form>
+          </div>
+        )}
+
+        {aba==="logs"&&(
+          <div>
+            <div style={{color:T.text,fontSize:17,fontWeight:900,marginBottom:14}}>📋 Logs de auditoria</div>
+            {logs.map(l=>(
+              <div key={l.id} style={{background:T.card,borderRadius:10,padding:"10px 14px",border:`1px solid ${T.border}`,marginBottom:8,fontSize:12}}>
+                <div style={{display:"flex",justifyContent:"space-between",gap:8}}>
+                  <span style={{color:T.text,fontWeight:700}}>{l.action}</span>
+                  <span style={{color:T.muted,fontSize:11}}>{l.ts?.toDate?l.ts.toDate().toLocaleString("pt-BR"):"—"}</span>
+                </div>
+                <div style={{color:T.mid,marginTop:3,fontSize:11}}>ID: {(l.uid||"").slice(0,16)}...</div>
+              </div>
+            ))}
+            {!logs.length&&<div style={{color:T.muted,textAlign:"center",padding:"24px 0"}}>Nenhum log ainda.</div>}
+          </div>
+        )}
+
+        {aba==="senha"&&(
+          <div style={{maxWidth:380}}>
+            <div style={{color:T.text,fontSize:17,fontWeight:900,marginBottom:16}}>🔑 Alterar minha senha</div>
+            <SenhaForm user={user} T={T} onOk={()=>ok("Senha alterada!")} onErr={e=>er(e)}/>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
+const SenhaForm=({user,T,onOk,onErr})=>{
+  const[atual,setAtual]=useState("");const[nova,setNova]=useState("");const[erros,setErros]=useState([]);const[load,setLoad]=useState(false);
+  const salvar=async e=>{
+    e.preventDefault();const ev=pwCheck(nova);setErros(ev);if(ev.length)return;
+    setLoad(true);
+    try{const c=firebase.auth.EmailAuthProvider.credential(user.email,atual);await user.reauthenticateWithCredential(c);await user.updatePassword(nova);await auditLog(user.uid,"SENHA",{});onOk();setAtual("");setNova("");setErros([]);}
+    catch(e){onErr("Senha atual incorreta.");}finally{setLoad(false);}
+  };
+  return(
+    <form onSubmit={salvar} style={{background:T.card,borderRadius:18,padding:22,border:`1.5px solid ${T.border}`,display:"flex",flexDirection:"column",gap:13}}>
+      <Campo label="Senha atual *" val={atual} set={setAtual} type="password" ph="Senha atual" T={T}/>
+      <Campo label="Nova senha *" val={nova} set={v=>{setNova(v);setErros(pwCheck(v));}} type="password" ph="Nova senha forte" T={T}/>
+      {erros.length>0&&<div style={{background:T.redLight,borderRadius:10,padding:"10px 12px"}}>{erros.map((e,i)=><div key={i} style={{color:T.red,fontSize:12}}>• {e}</div>)}</div>}
+      <button type="submit" disabled={load} style={{background:load?T.border:`linear-gradient(135deg,${T.rose},${T.roseDark})`,color:"#fff",border:"none",borderRadius:12,padding:"13px 0",fontWeight:800,fontSize:14,cursor:load?"not-allowed":"pointer"}}>{load?"⏳...":"🔑 Alterar"}</button>
+    </form>
+  );
+};
+
+// ══════════════════════════════════════════
+// CARD DO LIVRO
+// ══════════════════════════════════════════
+const CardLivro=({livro,onClick,onFav,T})=>{
+  const[hov,setHov]=useState(false);
+  return(
+    <div onMouseEnter={()=>setHov(true)} onMouseLeave={()=>setHov(false)} onClick={()=>onClick(livro)}
+      style={{cursor:"pointer",borderRadius:16,overflow:"hidden",background:T.card,border:`1.5px solid ${hov?T.rose:T.border}`,transition:"all .25s",transform:hov?"translateY(-5px)":"none",boxShadow:hov?`0 16px 32px ${T.rose}25`:`0 2px 8px rgba(0,0,0,.08)`}}>
+      <div style={{position:"relative",paddingBottom:"148%"}}>
+        <div style={{position:"absolute",inset:0}}><Capa livro={livro} w="100%" h="100%" r={0} T={T}/></div>
+        <div style={{position:"absolute",top:7,left:7,zIndex:2}}><Pill status={livro.status} sm/></div>
+        <div style={{position:"absolute",top:6,right:6,zIndex:3}} onClick={e=>{e.stopPropagation();onFav(livro.id);}}>
+          <span style={{fontSize:16,cursor:"pointer",transition:"all .2s",display:"block"}}>{livro.fav?"❤️":"🤍"}</span>
+        </div>
+        {livro.status==="lendo"&&(
+          <div style={{position:"absolute",bottom:0,left:0,right:0,padding:"20px 8px 7px",background:"linear-gradient(transparent,rgba(0,0,0,.5))",zIndex:2}}>
+            <div style={{background:"rgba(255,255,255,.3)",borderRadius:99,height:4,overflow:"hidden"}}>
+              <div style={{width:`${livro.progresso||0}%`,background:"#fff",height:"100%",borderRadius:99}}/>
+            </div>
+            <span style={{color:"#fff",fontSize:10,fontWeight:700}}>{livro.progresso||0}%</span>
+          </div>
+        )}
+      </div>
+      <div style={{padding:"10px 10px 12px"}}>
+        <div style={{color:T.text,fontSize:12,fontWeight:800,lineHeight:1.3,marginBottom:2,overflow:"hidden",display:"-webkit-box",WebkitLineClamp:2,WebkitBoxOrient:"vertical"}}>{livro.titulo}</div>
+        <div style={{color:T.muted,fontSize:10,marginBottom:4}}>{livro.autor}</div>
+        <div style={{display:"flex",gap:4,flexWrap:"wrap",marginBottom:4}}>
+          {livro.ano&&<span style={{background:T.butLight,color:"#B8860B",fontSize:8,fontWeight:700,padding:"2px 5px",borderRadius:5}}>📅 {livro.ano}</span>}
+          {livro.paginas>0&&<span style={{background:T.skyLight,color:"#1565C0",fontSize:8,fontWeight:700,padding:"2px 5px",borderRadius:5}}>📄 {livro.paginas}p</span>}
+        </div>
+        {livro.nota>0&&<Estrelas val={livro.nota} ro tam={12}/>}
+      </div>
+    </div>
+  );
+};
+
+// Prateleira horizontal
+const Prateleira=({titulo,livros,onLivro,onFav,emptyMsg,T})=>{
+  if(!livros.length)return null;
+  return(
+    <div style={{marginBottom:28}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
+        <div style={{color:T.text,fontSize:15,fontWeight:900}}>{titulo}</div>
+        <div style={{color:T.muted,fontSize:12}}>{livros.length} livro(s)</div>
+      </div>
+      <div style={{display:"flex",gap:12,overflowX:"auto",paddingBottom:8,scrollbarWidth:"none"}}>
+        {livros.map(b=>(
+          <div key={b.id} style={{flexShrink:0,width:130}}>
+            <CardLivro livro={b} onClick={onLivro} onFav={onFav} T={T}/>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+};
+
+// ══════════════════════════════════════════
+// FORMULÁRIO DE LIVRO
+// ══════════════════════════════════════════
+const FormLivro=({livro:ini,onSalvar,onFechar,T})=>{
+  const eb=!!ini?.id;
+  const vz={id:null,titulo:"",autor:"",genero:[],serie:"",status:"quero ler",nota:0,progresso:0,capa:null,paginas:0,ano:"",adicionadoEm:HOJE,finalizadoEm:null,sinopse:"",resenha:"",entradas:[],tags:[],fav:false,tempoDia:0};
+  const[f,setF]=useState(ini?{...vz,...ini}:vz);
+  const[picker,setPicker]=useState(false);
+  const[tagInput,setTagInput]=useState("");
+  const s=(k,v)=>setF(x=>({...x,[k]:v}));
+  const addG=g=>{if(g&&!f.genero.includes(g))s("genero",[...f.genero,g]);};
+  const addTag=t=>{const tg=t.trim().toLowerCase();if(tg&&!f.tags.includes(tg))s("tags",[...f.tags,tg]);setTagInput("");};
+  const salvar=()=>{if(!f.titulo.trim()){alert("Título obrigatório!");return;}onSalvar({...f,id:f.id||gid()});};
+  const onCapa=r=>{setF(x=>({...x,capa:r.capa,titulo:x.titulo||r.titulo,autor:x.autor||r.autor,paginas:x.paginas||r.paginas||0,ano:x.ano||r.ano||"",genero:x.genero.length?x.genero:r.genero.slice(0,2),sinopse:x.sinopse||r.sinopse||""}));setPicker(false);};
+
+  return(
+    <>
+      {picker&&<CapaPicker query0={`${f.titulo} ${f.autor}`} onSelect={onCapa} onClose={()=>setPicker(false)} T={T}/>}
+      <Modal onClose={onFechar} T={T} maxW={640}>
+        <ModalHead title={eb?"✏️ Editar livro":"📚 Adicionar livro"} onClose={onFechar} T={T}/>
+        <div style={{flex:1,overflowY:"auto",padding:22}}>
+          <div style={{display:"grid",gridTemplateColumns:"120px 1fr",gap:18}}>
+            <div style={{display:"flex",flexDirection:"column",gap:10}}>
+              <div style={{width:"100%",aspectRatio:"0.68",borderRadius:12,overflow:"hidden",border:`2px dashed ${T.border}`,cursor:"pointer"}} onClick={()=>setPicker(true)}>
+                {f.capa?<img src={f.capa} alt="" style={{width:"100%",height:"100%",objectFit:"cover"}}/>
+                  :<div style={{width:"100%",height:"100%",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",background:T.roseLight,gap:4}}><span style={{fontSize:26}}>📸</span><span style={{color:T.muted,fontSize:9,textAlign:"center"}}>Buscar capa</span></div>}
+              </div>
+              <Btn ch="🔍 Capa" onClick={()=>setPicker(true)} v="s" sm T={T}/>
+            </div>
+            <div style={{display:"flex",flexDirection:"column",gap:11}}>
+              <Campo label="Título *" val={f.titulo} set={v=>s("titulo",v)} ph="Nome do livro" T={T}/>
+              <Campo label="Autor(a)" val={f.autor} set={v=>s("autor",v)} ph="Nome do autor" T={T}/>
+              <Campo label="Série" val={f.serie||""} set={v=>s("serie",v)} ph="Ex: Império Romano" T={T}/>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8}}>
+                <div>
+                  <label style={{color:T.mid,fontSize:12,fontWeight:700,display:"block",marginBottom:4}}>Status</label>
+                  <select value={f.status} onChange={e=>s("status",e.target.value)} style={{width:"100%",background:T.bgAlt,border:`1.5px solid ${T.border}`,borderRadius:10,padding:"9px 8px",color:T.text,fontSize:12}}>
+                    {STATUS_LIST.map(x=><option key={x} value={x}>{STATUS_CFG[x].icon} {STATUS_CFG[x].label}</option>)}
+                  </select>
+                </div>
+                <Campo label="Páginas" val={f.paginas||""} set={v=>s("paginas",Number(v)||0)} ph="0" type="number" T={T}/>
+                <Campo label="Ano" val={f.ano||""} set={v=>s("ano",v)} ph="2024" T={T}/>
+              </div>
+              {(f.status==="lendo")&&(
+                <div>
+                  <label style={{color:T.mid,fontSize:12,fontWeight:700,display:"block",marginBottom:6}}>Progresso: {f.progresso||0}%</label>
+                  <input type="range" min="0" max="100" value={f.progresso||0} onChange={e=>s("progresso",Number(e.target.value))} style={{width:"100%",accentColor:T.rose}}/>
+                  <Barra val={f.progresso||0} T={T}/>
+                </div>
+              )}
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+                <Campo label="Adicionado em" val={f.adicionadoEm} set={v=>s("adicionadoEm",v)} type="date" T={T}/>
+                {f.status==="lido"&&<Campo label="Finalizado em" val={f.finalizadoEm||""} set={v=>s("finalizadoEm",v)} type="date" T={T}/>}
+              </div>
+            </div>
+          </div>
+          <div style={{marginTop:16}}>
+            <label style={{color:T.mid,fontSize:12,fontWeight:700,display:"block",marginBottom:8}}>Gêneros</label>
+            <div style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:8}}>{f.genero.map(g=><span key={g} onClick={()=>s("genero",f.genero.filter(x=>x!==g))} style={{background:T.roseLight,color:T.roseDark,fontSize:11,fontWeight:700,padding:"4px 10px",borderRadius:99,cursor:"pointer"}}>{g} ✕</span>)}</div>
+            <div style={{display:"flex",flexWrap:"wrap",gap:5}}>{GENEROS.filter(g=>!f.genero.includes(g)).slice(0,14).map(g=><span key={g} onClick={()=>addG(g)} style={{background:T.lavLight,color:T.lavDark,fontSize:10,padding:"3px 8px",borderRadius:99,cursor:"pointer",fontWeight:600}}>{g}</span>)}</div>
+          </div>
+          <div style={{marginTop:14}}>
+            <label style={{color:T.mid,fontSize:12,fontWeight:700,display:"block",marginBottom:8}}>Tags</label>
+            <div style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:8}}>{f.tags.map(t=><span key={t} onClick={()=>s("tags",f.tags.filter(x=>x!==t))} style={{background:T.butLight,color:"#B8860B",fontSize:11,fontWeight:700,padding:"3px 9px",borderRadius:99,cursor:"pointer"}}>#{t} ✕</span>)}</div>
+            <div style={{display:"flex",gap:8}}>
+              <input value={tagInput} onChange={e=>setTagInput(e.target.value)} onKeyDown={e=>e.key==="Enter"&&addTag(tagInput)} placeholder="Nova tag (Enter)" style={{flex:1,background:T.bgAlt,border:`1.5px solid ${T.border}`,borderRadius:10,padding:"8px 12px",color:T.text,fontSize:12,outline:"none"}}/>
+              <Btn ch="+" onClick={()=>addTag(tagInput)} v="s" sm T={T}/>
+            </div>
+          </div>
+          <div style={{marginTop:14,display:"flex",alignItems:"center",gap:20}}>
+            <div><label style={{color:T.mid,fontSize:12,fontWeight:700,display:"block",marginBottom:6}}>Avaliação</label><Estrelas val={f.nota} set={v=>s("nota",v)} tam={24}/></div>
+            <div style={{marginTop:22}}><span onClick={()=>s("fav",!f.fav)} style={{cursor:"pointer",fontSize:24,transition:"all .2s"}}>{f.fav?"❤️":"🤍"}</span></div>
+          </div>
+          <div style={{marginTop:14}}><Campo label="Sinopse" val={f.sinopse} set={v=>s("sinopse",v)} ph="Sobre o livro..." multi T={T}/></div>
+          {(f.status==="lido"||f.nota>0)&&<div style={{marginTop:14}}><Campo label="Minha resenha" val={f.resenha} set={v=>s("resenha",v)} ph="O que achei..." multi T={T}/></div>}
+        </div>
+        <div style={{padding:"14px 22px",borderTop:`1px solid ${T.border}`,display:"flex",gap:10,justifyContent:"flex-end",flexShrink:0}}>
+          <Btn ch="Cancelar" onClick={onFechar} v="s" T={T}/>
+          <Btn ch={eb?"💾 Salvar":"✨ Adicionar"} onClick={salvar} T={T}/>
+        </div>
+      </Modal>
+    </>
+  );
+};
+
+// ══════════════════════════════════════════
+// DETALHE DO LIVRO
+// ══════════════════════════════════════════
+
+const SimilCard=({r,onAdd,T})=>{
+  const[ok,setOk]=useState(true);
+  return(
+    <div style={{borderRadius:12,overflow:"hidden",border:`1.5px solid ${T.border}`,background:T.card}}>
+      <div style={{position:"relative",paddingBottom:"148%",background:T.lavLight}}>
+        {ok?<img src={r.capa} alt={r.titulo} style={{position:"absolute",inset:0,width:"100%",height:"100%",objectFit:"cover"}} onError={()=>setOk(false)}/>
+          :<div style={{position:"absolute",inset:0,display:"flex",alignItems:"center",justifyContent:"center"}}><span style={{fontSize:24}}>📚</span></div>}
+      </div>
+      <div style={{padding:"6px 8px"}}>
+        <div style={{color:T.text,fontSize:10,fontWeight:700,lineHeight:1.3,overflow:"hidden",display:"-webkit-box",WebkitLineClamp:2,WebkitBoxOrient:"vertical"}}>{r.titulo}</div>
+        <div style={{color:T.muted,fontSize:9,marginTop:1}}>{r.autor}</div>
+        <button onClick={()=>onAdd(r)} style={{marginTop:6,width:"100%",background:T.lavLight,border:"none",borderRadius:7,padding:"4px 0",color:T.lavDark,fontSize:10,fontWeight:700,cursor:"pointer"}}>+ Adicionar</button>
+      </div>
+    </div>
+  );
+};
+
+const DetalheLivro=({livro,onEditar,onRemover,onAddLivro,T})=>{
+  const[aba,setAba]=useState("info");
+  const[texto,setTexto]=useState("");const[humor,setHumor]=useState("📖");const[nota,setNota]=useState(0);
+  const[entradas,setEntradas]=useState(livro.entradas||[]);
+  const[simil,setSimil]=useState([]);const[loadS,setLoadS]=useState(false);
+  const[dlLoad,setDlLoad]=useState(false);const[dl,setDl]=useState(null);
+
+  useEffect(()=>setEntradas(livro.entradas||[]),[livro.id]);
+
+  const addEntrada=()=>{
+    if(!texto.trim())return;
+    setEntradas(p=>[...p,{id:gid(),data:HOJE,texto:texto.trim(),humor,nota}]);
+    setTexto("");setHumor("📖");setNota(0);
+  };
+
+  useEffect(()=>{
+    if(aba==="simil"&&!simil.length){
+      setLoadS(true);
+      const qs=[livro.genero?.[0],livro.autor].filter(Boolean);
+      Promise.all(qs.map(q=>buscarLivros(q))).then(all=>{
+        const seen=new Set([livro.titulo.toLowerCase()]);const r=[];
+        for(const arr of all)for(const x of arr)if(!seen.has(x.titulo.toLowerCase())){seen.add(x.titulo.toLowerCase());r.push(x);}
+        setSimil(r.slice(0,8));setLoadS(false);
+      });
+    }
+  },[aba]);
+
+  const ABAS=[{id:"info",l:"📋 Info"},{id:"diario",l:"📝 Diário"},{id:"simil",l:"🔍 Similares"},{id:"dl",l:"⬇️ Download"}];
+
+  return(
+    <div style={{minHeight:"100vh",background:T.bg,display:"flex",flexDirection:"column"}}>
+      <div style={{background:T.head,padding:"18px 18px 0"}}>
+        <div style={{display:"flex",gap:14,alignItems:"flex-start"}}>
+          <div style={{width:86,height:128,borderRadius:12,overflow:"hidden",boxShadow:"0 8px 24px rgba(0,0,0,.2)",flexShrink:0}}>
+            <Capa livro={livro} w="86px" h="128px" r={12} T={T}/>
+          </div>
+          <div style={{flex:1,minWidth:0}}>
+            <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:6}}><Pill status={livro.status}/>{livro.fav&&<span>❤️</span>}</div>
+            <div style={{color:T.text,fontSize:17,fontWeight:900,lineHeight:1.25,marginBottom:3}}>{livro.titulo}</div>
+            {livro.serie&&<div style={{color:T.lavDark,fontSize:11,fontWeight:700,marginBottom:3}}>📚 {livro.serie}</div>}
+            <div style={{color:T.mid,fontSize:12,marginBottom:6}}>✍️ {livro.autor}</div>
+            <Estrelas val={livro.nota} ro tam={16}/>
+            {livro.status==="lendo"&&<div style={{marginTop:6}}><Barra val={livro.progresso||0} T={T}/><span style={{color:T.roseDark,fontSize:10,fontWeight:700}}>{livro.progresso||0}%</span></div>}
+          </div>
+          <div style={{display:"flex",flexDirection:"column",gap:6,flexShrink:0}}>
+            <Btn ch="✏️" onClick={()=>onEditar(livro)} v="s" sm T={T}/>
+            <Btn ch="🗑️" onClick={()=>{if(confirm("Remover?"))onRemover(livro.id);}} v="d" sm T={T}/>
+          </div>
+        </div>
+        <div style={{display:"flex",gap:8,overflowX:"auto",padding:"12px 0 0",scrollbarWidth:"none"}}>
+          {[{l:"Páginas",v:livro.paginas||"—"},{l:"Ano",v:livro.ano||"—"},{l:"Gênero",v:livro.genero?.[0]||"—"},{l:"Adicionado",v:livro.adicionadoEm?.split("-").reverse().join("/")||"—"},...(livro.finalizadoEm?[{l:"Finalizado",v:livro.finalizadoEm.split("-").reverse().join("/")}]:[])].map((x,i)=>(
+            <div key={i} style={{background:"rgba(255,255,255,.18)",borderRadius:10,padding:"5px 10px",textAlign:"center",flexShrink:0}}>
+              <div style={{color:T.text,fontSize:12,fontWeight:800}}>{x.v}</div>
+              <div style={{color:T.muted,fontSize:9}}>{x.l}</div>
+            </div>
+          ))}
+        </div>
+        <div style={{display:"flex",marginTop:12}}>
+          {ABAS.map(a=>(
+            <button key={a.id} onClick={()=>setAba(a.id)} style={{flex:1,padding:"10px 0",background:"none",border:"none",cursor:"pointer",color:aba===a.id?T.roseDark:T.mid,fontWeight:aba===a.id?800:600,fontSize:11,borderBottom:`3px solid ${aba===a.id?T.rose:"transparent"}`,transition:"all .2s"}}>
+              {a.l}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div style={{flex:1,overflowY:"auto",padding:"18px 18px 40px"}}>
+        {aba==="info"&&(
+          <div style={{display:"flex",flexDirection:"column",gap:14}}>
+            {livro.sinopse&&<div><div style={{color:T.text,fontSize:13,fontWeight:800,marginBottom:6}}>📖 Sinopse</div><div style={{color:T.mid,fontSize:13,lineHeight:1.6,background:T.card,borderRadius:12,padding:"12px 14px",border:`1px solid ${T.border}`}}>{livro.sinopse}</div></div>}
+            {livro.genero?.length>0&&<div><div style={{color:T.text,fontSize:13,fontWeight:800,marginBottom:8}}>🏷️ Gêneros</div><div style={{display:"flex",gap:6,flexWrap:"wrap"}}>{livro.genero.map(g=><span key={g} style={{background:T.roseLight,color:T.roseDark,fontSize:11,fontWeight:700,padding:"4px 10px",borderRadius:99}}>{g}</span>)}</div></div>}
+            {livro.tags?.length>0&&<div><div style={{color:T.text,fontSize:13,fontWeight:800,marginBottom:8}}>🔖 Tags</div><div style={{display:"flex",gap:6,flexWrap:"wrap"}}>{livro.tags.map(t=><span key={t} style={{background:T.butLight,color:"#B8860B",fontSize:11,fontWeight:700,padding:"3px 9px",borderRadius:99}}>#{t}</span>)}</div></div>}
+            {livro.resenha&&<div><div style={{color:T.text,fontSize:13,fontWeight:800,marginBottom:6}}>💬 Resenha</div><div style={{color:T.mid,fontSize:13,lineHeight:1.6,background:T.lavLight,borderRadius:12,padding:"12px 14px",fontStyle:"italic"}}>"{livro.resenha}"</div><div style={{marginTop:6}}><Estrelas val={livro.nota} ro tam={15}/></div></div>}
+            {!livro.sinopse&&!livro.resenha&&<div style={{textAlign:"center",padding:"28px 0",color:T.muted}}><div style={{fontSize:38,marginBottom:8}}>📋</div>Sem informações adicionais<br/><button onClick={()=>onEditar(livro)} style={{marginTop:12,background:T.card,border:`1.5px solid ${T.border}`,borderRadius:10,padding:"7px 14px",color:T.mid,fontSize:12,cursor:"pointer",fontWeight:700}}>✏️ Adicionar</button></div>}
+          </div>
+        )}
+
+        {aba==="diario"&&(
+          <div>
+            <div style={{background:T.card,borderRadius:14,padding:14,marginBottom:18,border:`1.5px solid ${T.border}`}}>
+              <div style={{color:T.text,fontSize:13,fontWeight:800,marginBottom:8}}>✍️ Nova entrada</div>
+              <textarea value={texto} onChange={e=>setTexto(e.target.value)} placeholder="O que está sentindo sobre este livro?" rows={3}
+                style={{width:"100%",background:T.bgAlt,border:`1.5px solid ${T.border}`,borderRadius:10,padding:"10px 12px",color:T.text,fontSize:13,outline:"none",resize:"vertical",boxSizing:"border-box"}}/>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginTop:10,flexWrap:"wrap",gap:8}}>
+                <div style={{display:"flex",gap:4,flexWrap:"wrap"}}>{HUMORES.slice(0,10).map(h=><span key={h} onClick={()=>setHumor(h)} style={{fontSize:20,cursor:"pointer",opacity:humor===h?1:.3,transition:"all .15s",transform:humor===h?"scale(1.3)":"scale(1)",display:"inline-block"}}>{h}</span>)}</div>
+                <div style={{display:"flex",alignItems:"center",gap:8}}>
+                  <Estrelas val={nota} set={setNota} tam={16}/>
+                  <Btn ch="Salvar ✓" onClick={addEntrada} sm dis={!texto.trim()} T={T}/>
+                </div>
+              </div>
+            </div>
+            {!entradas.length
+              ?<div style={{textAlign:"center",padding:"20px 0",color:T.muted}}><div style={{fontSize:34,marginBottom:8}}>📝</div>Nenhuma entrada ainda</div>
+              :<div style={{display:"flex",flexDirection:"column",gap:10}}>
+                {[...entradas].reverse().map(e=>(
+                  <div key={e.id} style={{background:T.card,borderRadius:12,padding:"12px 14px",border:`1.5px solid ${T.border}`}}>
+                    <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:6}}>
+                      <span style={{fontSize:18}}>{e.humor}</span>
+                      <span style={{color:T.muted,fontSize:11}}>{e.data.split("-").reverse().join("/")}</span>
+                      {e.nota>0&&<Estrelas val={e.nota} ro tam={11}/>}
+                      <button onClick={()=>setEntradas(p=>p.filter(x=>x.id!==e.id))} style={{marginLeft:"auto",background:"none",border:"none",color:T.muted,cursor:"pointer",fontSize:14}}>✕</button>
+                    </div>
+                    <div style={{color:T.text,fontSize:13,lineHeight:1.6}}>{e.texto}</div>
+                  </div>
+                ))}
+              </div>
+            }
+          </div>
+        )}
+
+        {aba==="simil"&&(
+          <div>
+            {loadS&&<div style={{textAlign:"center",padding:"20px 0"}}><div className="spin" style={{width:28,height:28,border:`2px solid ${T.lav}`,borderTopColor:"transparent",borderRadius:"50%",margin:"0 auto 8px"}}/><div style={{color:T.muted,fontSize:12}}>Buscando similares...</div></div>}
+            {!loadS&&simil.length>0&&(
+              <div>
+                <div style={{color:T.mid,fontSize:11,fontWeight:700,marginBottom:12}}>📚 {simil.length} livros similares</div>
+                <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(120px,1fr))",gap:12}}>
+                  {simil.map((r,i)=><SimilCard key={i} r={r} onAdd={onAddLivro} T={T}/>)}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {aba==="dl"&&(
+          <div>
+            <div style={{color:T.text,fontSize:15,fontWeight:800,marginBottom:4}}>⬇️ Download gratuito</div>
+            <div style={{color:T.muted,fontSize:13,marginBottom:16}}>Busca em Archive.org e Project Gutenberg</div>
+            {!dl&&<Btn ch={dlLoad?"⏳ Buscando...":"🔍 Buscar download"} onClick={async()=>{setDlLoad(true);const r=await buscarDownload(livro);setDl(r);setDlLoad(false);}} dis={dlLoad} T={T}/>}
+            {dl&&(dl.ok?(
+              <div style={{display:"flex",flexDirection:"column",gap:10}}>
+                <div style={{color:T.lavDark,fontSize:13,fontWeight:800,marginBottom:4}}>✅ Encontrado em: {dl.fonte}</div>
+                <a href={dl.ler} target="_blank" rel="noopener noreferrer" style={{background:T.card,color:T.text,border:`1px solid ${T.border}`,borderRadius:10,padding:"12px 16px",textDecoration:"none",display:"flex",alignItems:"center",gap:8,fontSize:13,fontWeight:700}}>📖 Ler online</a>
+                <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+                  {dl.epub&&<a href={dl.epub} target="_blank" rel="noopener noreferrer" style={{flex:1,background:T.mintLight,color:T.mintDark,border:`1px solid ${T.mint}`,borderRadius:10,padding:"10px 0",textDecoration:"none",textAlign:"center",fontSize:12,fontWeight:800}}>📱 EPUB</a>}
+                  {dl.pdf&&<a href={dl.pdf} target="_blank" rel="noopener noreferrer" style={{flex:1,background:T.roseLight,color:T.roseDark,border:`1px solid ${T.rose}`,borderRadius:10,padding:"10px 0",textDecoration:"none",textAlign:"center",fontSize:12,fontWeight:800}}>📄 PDF</a>}
+                  {dl.txt&&<a href={dl.txt} target="_blank" rel="noopener noreferrer" style={{flex:1,background:T.butLight,color:"#B8860B",border:`1px solid ${T.butter||"#FFE082"}`,borderRadius:10,padding:"10px 0",textDecoration:"none",textAlign:"center",fontSize:12,fontWeight:800}}>📝 TXT</a>}
+                </div>
+                <div style={{color:T.muted,fontSize:11,textAlign:"center"}}>⚠️ Sujeito a direitos autorais</div>
+              </div>
+            ):(
+              <div style={{textAlign:"center",padding:"20px 0"}}>
+                <div style={{fontSize:34,marginBottom:8}}>😔</div>
+                <div style={{color:T.text,fontSize:14,fontWeight:700,marginBottom:4}}>Download não disponível</div>
+                <div style={{color:T.muted,fontSize:12}}>Este livro tem direitos autorais e não possui versão gratuita legal.</div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
+// ══════════════════════════════════════════
+// DESCOBRIR LIVROS
+// ══════════════════════════════════════════
+const Descobrir=({onAdd,jaTemTitulos,T})=>{
+  const[q,setQ]=useState("");const[filtro,setFiltro]=useState("titulo");
+  const[res,setRes]=useState([]);const[load,setLoad]=useState(false);const[buscou,setBuscou]=useState(false);
+  const buscar=async()=>{
+    if(!q.trim())return;setLoad(true);setBuscou(true);setRes([]);
+    let sq=q;
+    if(filtro==="autor")sq=`inauthor:${q}`;
+    else if(filtro==="genero")sq=`subject:${q}`;
+    setRes(await buscarLivros(sq));setLoad(false);
+  };
+  const FILTROS=[{id:"titulo",l:"📖 Título"},{id:"autor",l:"✍️ Autor"},{id:"genero",l:"🏷️ Gênero"}];
+  const SUGEST=["Dark Romance","Thamy Bastida","Dom Casmurro","Harry Potter","Bela Kelly","Bruna Rodrigues","Paranormal","Máfia Romance"];
+
+  return(
+    <div>
+      <div style={{textAlign:"center",marginBottom:18}}>
+        <div style={{fontSize:28,marginBottom:4}}>🌎</div>
+        <div style={{color:T.text,fontSize:17,fontWeight:900,marginBottom:3}}>Descobrir Livros</div>
+        <div style={{color:T.muted,fontSize:12}}>Open Library + Google Books · Download · Adiciona à biblioteca</div>
+      </div>
+      <div style={{display:"flex",gap:6,marginBottom:10,flexWrap:"wrap",justifyContent:"center"}}>
+        {FILTROS.map(f=><button key={f.id} onClick={()=>setFiltro(f.id)} style={{background:filtro===f.id?`linear-gradient(135deg,${T.rose},${T.roseDark})`:T.bgAlt,color:filtro===f.id?"#fff":T.mid,border:`1.5px solid ${filtro===f.id?T.rose:T.border}`,borderRadius:20,padding:"5px 12px",fontSize:11,fontWeight:700,cursor:"pointer",transition:"all .2s"}}>{f.l}</button>)}
+      </div>
+      <div style={{display:"flex",gap:8,marginBottom:12}}>
+        <input value={q} onChange={e=>setQ(e.target.value)} onKeyDown={e=>e.key==="Enter"&&buscar()} placeholder={`Buscar por ${FILTROS.find(f=>f.id===filtro)?.l||"título"}...`}
+          style={{flex:1,background:T.card,border:`2px solid ${T.rose}`,borderRadius:14,padding:"12px 16px",color:T.text,fontSize:14,outline:"none",boxSizing:"border-box"}}/>
+        <button onClick={buscar} disabled={load} style={{background:load?T.border:`linear-gradient(135deg,${T.rose},${T.roseDark})`,color:"#fff",border:"none",borderRadius:14,padding:"0 20px",fontWeight:800,fontSize:14,cursor:load?"not-allowed":"pointer",whiteSpace:"nowrap"}}>
+          {load?"⏳":"🔍"}
+        </button>
+      </div>
+      {!buscou&&<div style={{textAlign:"center",marginBottom:16}}><div style={{color:T.muted,fontSize:11,marginBottom:8,fontWeight:700}}>💡 Sugestões:</div><div style={{display:"flex",gap:6,flexWrap:"wrap",justifyContent:"center"}}>{SUGEST.map(s=><span key={s} onClick={()=>{setQ(s);}} style={{background:T.lavLight,color:T.lavDark,fontSize:11,fontWeight:700,padding:"5px 12px",borderRadius:99,cursor:"pointer"}}>{s}</span>)}</div></div>}
+      {load&&<div style={{textAlign:"center",padding:"40px 0"}}><div className="spin" style={{width:40,height:40,border:`4px solid ${T.rose}`,borderTopColor:"transparent",borderRadius:"50%",margin:"0 auto 12px"}}/><div style={{color:T.text,fontSize:14,fontWeight:700}}>Buscando...</div></div>}
+      {!load&&buscou&&!res.length&&<div style={{textAlign:"center",padding:"36px 0"}}><div style={{fontSize:44,marginBottom:10}}>🔍</div><div style={{color:T.text,fontSize:15,fontWeight:800}}>Nenhum livro encontrado</div></div>}
+      {!load&&res.length>0&&(
+        <div>
+          <div style={{color:T.muted,fontSize:11,marginBottom:12,textAlign:"center"}}>{res.length} livros — toque em <b>+ Biblioteca</b> para salvar</div>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(165px,1fr))",gap:12}}>
+            {res.map((r,i)=><CardResultado key={r.id||i} r={r} adicionado={jaTemTitulos.has(r.titulo.toLowerCase())} onAdd={onAdd} T={T}/>)}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+const CardResultado=({r,adicionado,onAdd,T})=>{
+  const[imgSt,setImgSt]=useState("load");const[src,setSrc]=useState(null);const[srcI,setSrcI]=useState(0);
+  const[dlLoad,setDlLoad]=useState(false);const[dl,setDl]=useState(null);const[showDl,setShowDl]=useState(false);
+  const srcs=(()=>{const s=[];if(r.capa)s.push(r.capa);if(r.fonte==="GB"&&r.capa){s.push(r.capa.replace(/zoom=\d/,"zoom=1"));s.push(r.capa.replace(/zoom=\d/,"zoom=0"));}if(r.fonte==="OL"&&r.capa){s.push(r.capa.replace("-L.jpg","-M.jpg"));}return s.filter(Boolean);})();
+  useEffect(()=>{if(!srcs.length){setImgSt("err");return;}setSrc(srcs[0]);setImgSt("load");setSrcI(0);},[r.id]);
+  const onErr=()=>{const n=srcI+1;if(n<srcs.length){setSrcI(n);setSrc(srcs[n]);}else setImgSt("err");};
+  const baixar=async e=>{e.stopPropagation();setDlLoad(true);setShowDl(true);setDl(await buscarDownload(r));setDlLoad(false);};
+  const bB={border:"none",borderRadius:9,fontSize:11,fontWeight:800,cursor:"pointer",textDecoration:"none",textAlign:"center",display:"flex",alignItems:"center",justifyContent:"center",gap:4};
+  return(
+    <div style={{background:T.card,borderRadius:14,overflow:"hidden",border:`1.5px solid ${T.border}`,display:"flex",flexDirection:"column",transition:"all .2s"}}
+      onMouseEnter={e=>{e.currentTarget.style.borderColor=T.rose;e.currentTarget.style.transform="translateY(-2px)";e.currentTarget.style.boxShadow=`0 6px 20px ${T.rose}20`;}}
+      onMouseLeave={e=>{e.currentTarget.style.borderColor=T.border;e.currentTarget.style.transform="none";e.currentTarget.style.boxShadow="none";}}>
+      <div style={{position:"relative",paddingBottom:"145%",background:T.roseLight,flexShrink:0}}>
+        {imgSt!=="err"&&src&&<img src={src} alt={r.titulo} style={{position:"absolute",inset:0,width:"100%",height:"100%",objectFit:"cover",display:imgSt==="load"?"none":"block"}} onLoad={()=>setImgSt("ok")} onError={onErr}/>}
+        {imgSt==="load"&&<div style={{position:"absolute",inset:0,display:"flex",alignItems:"center",justifyContent:"center"}}><div className="spin" style={{width:24,height:24,border:`2px solid ${T.rose}`,borderTopColor:"transparent",borderRadius:"50%"}}/></div>}
+        {imgSt==="err"&&<div style={{position:"absolute",inset:0,display:"flex",alignItems:"center",justifyContent:"center",background:`linear-gradient(135deg,${T.roseLight},${T.lavLight})`}}><span style={{fontSize:36}}>📚</span></div>}
+        <div style={{position:"absolute",top:6,right:6,background:r.fonte==="OL"?T.mintLight:T.lavLight,borderRadius:6,padding:"2px 6px"}}><span style={{color:r.fonte==="OL"?T.mintDark:T.lavDark,fontSize:8,fontWeight:800}}>{r.fonte}</span></div>
+      </div>
+      <div style={{padding:"10px 12px",flex:1,display:"flex",flexDirection:"column"}}>
+        <div style={{color:T.text,fontSize:12,fontWeight:800,marginBottom:2,lineHeight:1.3,overflow:"hidden",display:"-webkit-box",WebkitLineClamp:2,WebkitBoxOrient:"vertical"}}>{r.titulo}</div>
+        <div style={{color:T.mid,fontSize:10,marginBottom:5}}>{r.autor}</div>
+        <div style={{display:"flex",gap:4,flexWrap:"wrap",marginBottom:6}}>
+          {r.ano&&<span style={{background:T.butLight,color:"#B8860B",fontSize:8,fontWeight:700,padding:"2px 5px",borderRadius:5}}>📅 {r.ano}</span>}
+          {r.paginas>0&&<span style={{background:T.skyLight,color:"#1565C0",fontSize:8,fontWeight:700,padding:"2px 5px",borderRadius:5}}>📄 {r.paginas}p</span>}
+        </div>
+        {r.sinopse&&<div style={{color:T.muted,fontSize:10,lineHeight:1.5,marginBottom:8,overflow:"hidden",display:"-webkit-box",WebkitLineClamp:2,WebkitBoxOrient:"vertical",flex:1}}>{r.sinopse.slice(0,100)}...</div>}
+        <div style={{display:"flex",gap:4,marginTop:"auto",paddingTop:6}}>
+          {r.previa&&<a href={r.previa} target="_blank" rel="noopener noreferrer" style={{...bB,flex:"0 0 auto",background:T.skyLight,color:"#1976D2",padding:"6px 8px"}}>👁️</a>}
+          <button onClick={baixar} style={{...bB,flex:1,background:`linear-gradient(135deg,${T.lav},${T.lavDark})`,color:"#fff",padding:"6px 0"}}>{dlLoad?"⏳":"⬇️"}</button>
+          <button onClick={()=>!adicionado&&onAdd(r)} disabled={adicionado} style={{...bB,flex:1,background:adicionado?T.mintLight:`linear-gradient(135deg,${T.rose},${T.roseDark})`,color:adicionado?T.mintDark:"#fff",padding:"6px 0",cursor:adicionado?"default":"pointer"}}>
+            {adicionado?"✓":"+ Salvar"}
+          </button>
+        </div>
+        {showDl&&(
+          <div style={{marginTop:8,background:T.lavLight,borderRadius:10,padding:"10px 12px",border:`1.5px solid ${T.lav}`,position:"relative"}}>
+            <button onClick={()=>setShowDl(false)} style={{position:"absolute",top:5,right:7,background:"none",border:"none",cursor:"pointer",color:T.muted,fontSize:13}}>✕</button>
+            {dlLoad&&<div style={{textAlign:"center",padding:"6px 0"}}><div className="spin" style={{width:18,height:18,border:`2px solid ${T.lavDark}`,borderTopColor:"transparent",borderRadius:"50%",margin:"0 auto 4px"}}/><span style={{color:T.muted,fontSize:11}}>Buscando...</span></div>}
+            {!dlLoad&&dl&&(dl.ok?(
+              <>
+                <div style={{color:T.lavDark,fontSize:11,fontWeight:800,marginBottom:6}}>✅ {dl.fonte}</div>
+                <div style={{display:"flex",flexDirection:"column",gap:5}}>
+                  <a href={dl.ler} target="_blank" rel="noopener noreferrer" style={{...bB,background:T.card,color:T.text,border:`1px solid ${T.border}`,padding:"7px",borderRadius:8,fontSize:11}}>📖 Ler online</a>
+                  <div style={{display:"flex",gap:4}}>
+                    {dl.epub&&<a href={dl.epub} target="_blank" rel="noopener noreferrer" style={{...bB,flex:1,background:T.mintLight,color:T.mintDark,border:`1px solid ${T.mint}`,padding:"6px 0",borderRadius:7,fontSize:10}}>📱 EPUB</a>}
+                    {dl.pdf&&<a href={dl.pdf} target="_blank" rel="noopener noreferrer" style={{...bB,flex:1,background:T.roseLight,color:T.roseDark,border:`1px solid ${T.rose}`,padding:"6px 0",borderRadius:7,fontSize:10}}>📄 PDF</a>}
+                    {dl.txt&&<a href={dl.txt} target="_blank" rel="noopener noreferrer" style={{...bB,flex:1,background:T.butLight,color:"#B8860B",border:`1px solid #FFE082`,padding:"6px 0",borderRadius:7,fontSize:10}}>📝 TXT</a>}
+                  </div>
+                </div>
+              </>
+            ):(
+              <div style={{textAlign:"center",padding:"4px 0"}}>
+                <div style={{fontSize:20,marginBottom:4}}>😔</div>
+                <div style={{color:T.text,fontSize:11,fontWeight:700}}>Sem download gratuito</div>
+                <div style={{color:T.muted,fontSize:10,marginTop:2}}>Livro com direitos autorais.</div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
+// ══════════════════════════════════════════
+// MELHORES DO MÊS
+// ══════════════════════════════════════════
+const MelhoresDoMes=({livros,T})=>{
+  const[mesSel,setMesSel]=useState(`${ANO}-${String(new Date().getMonth()+1).padStart(2,"0")}`);
+  const mesesDisponiveis=useMemo(()=>{
+    const s=new Set();
+    livros.filter(b=>b.status==="lido"&&b.finalizadoEm).forEach(b=>s.add(b.finalizadoEm.slice(0,7)));
+    return [...s].sort().reverse();
+  },[livros]);
+
+  const livrosMes=useMemo(()=>{
+    return livros
+      .filter(b=>b.status==="lido"&&b.finalizadoEm?.startsWith(mesSel)&&b.nota>0)
+      .sort((a,b)=>b.nota-a.nota);
+  },[livros,mesSel]);
+
+  const MEDALHAS=["🥇","🥈","🥉"];
+  const mesLabel=mesSel?`${MESES[parseInt(mesSel.slice(5,7))-1]} ${mesSel.slice(0,4)}`:"";
+
+  return(
+    <div style={{paddingBottom:32}}>
+      <div style={{textAlign:"center",marginBottom:20}}>
+        <div style={{fontSize:32,marginBottom:4}}>🏆</div>
+        <div style={{color:T.text,fontSize:18,fontWeight:900,marginBottom:4}}>Melhores do Mês</div>
+        <div style={{color:T.muted,fontSize:13}}>Seus livros favoritos de cada período</div>
+      </div>
+
+      {/* Seletor de mês */}
+      <div style={{display:"flex",gap:8,overflowX:"auto",scrollbarWidth:"none",marginBottom:24,paddingBottom:4}}>
+        {mesesDisponiveis.length===0&&<div style={{color:T.muted,fontSize:12,textAlign:"center",width:"100%"}}>Nenhum livro lido ainda neste período</div>}
+        {mesesDisponiveis.map(m=>(
+          <button key={m} onClick={()=>setMesSel(m)} style={{flexShrink:0,background:mesSel===m?`linear-gradient(135deg,${T.rose},${T.roseDark})`:T.card,color:mesSel===m?"#fff":T.mid,border:`1.5px solid ${mesSel===m?T.rose:T.border}`,borderRadius:20,padding:"7px 16px",fontSize:12,fontWeight:700,cursor:"pointer",transition:"all .2s",whiteSpace:"nowrap"}}>
+            {MESES[parseInt(m.slice(5,7))-1]} {m.slice(0,4)}
+          </button>
+        ))}
+      </div>
+
+      {livrosMes.length===0?(
+        <div style={{textAlign:"center",padding:"40px 0"}}>
+          <div style={{fontSize:44,marginBottom:10}}>📚</div>
+          <div style={{color:T.text,fontSize:15,fontWeight:700,marginBottom:4}}>Nenhum livro avaliado em {mesLabel}</div>
+          <div style={{color:T.muted,fontSize:12}}>Adicione notas aos livros que leu neste mês</div>
+        </div>
+      ):(
+        <div style={{display:"flex",flexDirection:"column",gap:16}}>
+          {livrosMes.slice(0,3).map((b,i)=>(
+            <div key={b.id} style={{background:T.card,borderRadius:20,padding:18,border:`2px solid ${i===0?T.star:i===1?"#C0C0C0":i===2?"#CD7F32":T.border}`,boxShadow:i===0?`0 8px 28px ${T.star}30`:"none"}}>
+              <div style={{display:"flex",gap:16,alignItems:"flex-start"}}>
+                <div style={{fontSize:36,flexShrink:0,lineHeight:1}}>{MEDALHAS[i]||"🏅"}</div>
+                <div style={{width:72,height:107,borderRadius:10,overflow:"hidden",flexShrink:0,boxShadow:"0 4px 12px rgba(0,0,0,.2)"}}>
+                  <Capa livro={b} w="72px" h="107px" r={10} T={T}/>
+                </div>
+                <div style={{flex:1,minWidth:0}}>
+                  <div style={{color:T.text,fontSize:15,fontWeight:900,lineHeight:1.25,marginBottom:3}}>{b.titulo}</div>
+                  <div style={{color:T.mid,fontSize:12,marginBottom:6}}>✍️ {b.autor}</div>
+                  <Estrelas val={b.nota} ro tam={18}/>
+                  <div style={{display:"flex",gap:10,marginTop:8,flexWrap:"wrap"}}>
+                    {b.paginas>0&&<span style={{background:T.skyLight,color:"#1565C0",fontSize:10,fontWeight:700,padding:"3px 8px",borderRadius:8}}>📄 {b.paginas} págs</span>}
+                    {b.finalizadoEm&&<span style={{background:T.mintLight,color:T.mintDark,fontSize:10,fontWeight:700,padding:"3px 8px",borderRadius:8}}>📅 {b.finalizadoEm.split("-").reverse().join("/")}</span>}
+                  </div>
+                  {b.resenha&&<div style={{marginTop:10,color:T.mid,fontSize:12,lineHeight:1.5,fontStyle:"italic",background:T.bgAlt,borderRadius:10,padding:"8px 10px"}}>"{b.resenha.slice(0,120)}{b.resenha.length>120?"...":""}"</div>}
+                </div>
+              </div>
+            </div>
+          ))}
+          {livrosMes.length>3&&(
+            <div style={{marginTop:8}}>
+              <div style={{color:T.text,fontSize:14,fontWeight:800,marginBottom:12}}>Outros lidos em {mesLabel}</div>
+              <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(120px,1fr))",gap:10}}>
+                {livrosMes.slice(3).map((b,i)=>(
+                  <div key={b.id} style={{background:T.card,borderRadius:12,padding:"10px 10px 12px",border:`1.5px solid ${T.border}`,textAlign:"center"}}>
+                    <div style={{width:60,height:89,borderRadius:8,overflow:"hidden",margin:"0 auto 8px"}}>
+                      <Capa livro={b} w="60px" h="89px" r={8} T={T}/>
+                    </div>
+                    <div style={{color:T.text,fontSize:10,fontWeight:700,lineHeight:1.3,overflow:"hidden",display:"-webkit-box",WebkitLineClamp:2,WebkitBoxOrient:"vertical"}}>{b.titulo}</div>
+                    <div style={{marginTop:4}}><Estrelas val={b.nota} ro tam={11}/></div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+};
+
+// ══════════════════════════════════════════
+// LIVRO DO ANO
+// ══════════════════════════════════════════
+const LivroDoAno=({livros,T})=>{
+  const lidos=livros.filter(b=>b.status==="lido"&&b.finalizadoEm?.startsWith(String(ANO)));
+  const melhor=lidos.filter(b=>b.nota>0).sort((a,b)=>b.nota-a.nota)[0];
+  const totalPags=lidos.reduce((s,b)=>s+(b.paginas||0),0);
+  const avg=lidos.filter(b=>b.nota>0).reduce((s,b,_,a)=>s+b.nota/a.length,0);
+
+  const autorCount={};lidos.forEach(b=>{if(b.autor)autorCount[b.autor]=(autorCount[b.autor]||0)+1;});
+  const autorFav=Object.entries(autorCount).sort((a,b)=>b[1]-a[1])[0];
+
+  const generoCount={};lidos.forEach(b=>(b.genero||[]).forEach(g=>{generoCount[g]=(generoCount[g]||0)+1;}));
+  const generoFav=Object.entries(generoCount).sort((a,b)=>b[1]-a[1])[0];
+
+  return(
+    <div style={{paddingBottom:32}}>
+      <div style={{textAlign:"center",marginBottom:24}}>
+        <div style={{fontSize:32,marginBottom:4}}>🏆</div>
+        <div style={{color:T.text,fontSize:18,fontWeight:900,marginBottom:4}}>Livro do Ano {ANO}</div>
+        <div style={{color:T.muted,fontSize:13}}>Seu desempenho de leitura este ano</div>
+      </div>
+
+      {!lidos.length?(
+        <div style={{textAlign:"center",padding:"40px 0",color:T.muted}}>
+          <div style={{fontSize:44,marginBottom:10}}>📚</div>
+          <div style={{color:T.text,fontSize:15,fontWeight:700}}>Nenhum livro finalizado em {ANO} ainda</div>
+        </div>
+      ):(
+        <>
+          {/* Melhor livro */}
+          {melhor&&(
+            <div style={{background:`linear-gradient(135deg,${T.roseLight},${T.lavLight})`,borderRadius:20,padding:22,marginBottom:20,border:`2px solid ${T.rose}`}}>
+              <div style={{color:T.roseDark,fontSize:11,fontWeight:800,textTransform:"uppercase",letterSpacing:1,marginBottom:10}}>🏆 Melhor Livro do Ano</div>
+              <div style={{display:"flex",gap:16,alignItems:"flex-start"}}>
+                <div style={{width:80,height:118,borderRadius:12,overflow:"hidden",boxShadow:"0 6px 20px rgba(0,0,0,.2)",flexShrink:0}}>
+                  <Capa livro={melhor} w="80px" h="118px" r={12} T={T}/>
+                </div>
+                <div style={{flex:1}}>
+                  <div style={{color:T.text,fontSize:16,fontWeight:900,lineHeight:1.25,marginBottom:3}}>{melhor.titulo}</div>
+                  <div style={{color:T.mid,fontSize:13,marginBottom:8}}>✍️ {melhor.autor}</div>
+                  <Estrelas val={melhor.nota} ro tam={20}/>
+                  {melhor.resenha&&<div style={{marginTop:10,color:T.mid,fontSize:12,lineHeight:1.5,fontStyle:"italic"}}>"{melhor.resenha.slice(0,150)}..."</div>}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Stats do ano */}
+          <div style={{display:"grid",gridTemplateColumns:"repeat(2,1fr)",gap:12,marginBottom:16}}>
+            {[
+              {ico:"📚",val:lidos.length,label:`Livros em ${ANO}`,cor:T.lavDark},
+              {ico:"📄",val:totalPags.toLocaleString("pt-BR"),label:"Páginas lidas",cor:T.roseDark},
+              {ico:"⭐",val:avg?avg.toFixed(1):"—",label:"Média de avaliações",cor:T.star},
+              {ico:"❤️",val:autorFav?autorFav[0].split(" ").slice(-1)[0]:"—",label:"Autor favorito",cor:T.red},
+              {ico:"🏷️",val:generoFav?generoFav[0]:"—",label:"Gênero mais lido",cor:T.lavDark},
+              {ico:"🥇",val:melhor?melhor.nota+"★":"—",label:"Maior nota",cor:T.star},
+            ].map((s,i)=>(
+              <div key={i} style={{background:T.card,borderRadius:14,padding:"14px 16px",border:`1.5px solid ${T.border}`,textAlign:"center"}}>
+                <div style={{fontSize:22,marginBottom:4}}>{s.ico}</div>
+                <div style={{color:s.cor,fontSize:18,fontWeight:900,marginBottom:2,overflow:"hidden",whiteSpace:"nowrap",textOverflow:"ellipsis"}}>{s.val}</div>
+                <div style={{color:T.muted,fontSize:10}}>{s.label}</div>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  );
+};
+
+// ══════════════════════════════════════════
+// RETROSPECTIVA
+// ══════════════════════════════════════════
+const Retrospectiva=({livros,T})=>{
+  const lidos=livros.filter(b=>b.status==="lido"&&b.finalizadoEm?.startsWith(String(ANO)));
+  const totalPags=lidos.reduce((s,b)=>s+(b.paginas||0),0);
+  const avg=lidos.filter(b=>b.nota>0).reduce((s,b,_,a)=>s+b.nota/a.length,0);
+  const tempoEst=Math.round(totalPags*2/60);
+  const generoCount={};lidos.forEach(b=>(b.genero||[]).forEach(g=>{generoCount[g]=(generoCount[g]||0)+1;}));
+  const topGenero=Object.entries(generoCount).sort((a,b)=>b[1]-a[1])[0];
+  const autorCount={};lidos.forEach(b=>{if(b.autor)autorCount[b.autor]=(autorCount[b.autor]||0)+1;});
+  const topAutor=Object.entries(autorCount).sort((a,b)=>b[1]-a[1])[0];
+  const maisPags=lidos.sort((a,b)=>(b.paginas||0)-(a.paginas||0))[0];
+  const melhorNota=lidos.filter(b=>b.nota>0).sort((a,b)=>b.nota-a.nota)[0];
+  const piorNota=lidos.filter(b=>b.nota>0).sort((a,b)=>a.nota-b.nota)[0];
+
+  const ITEMS=[
+    {ico:"📚",label:"Livros lidos",val:lidos.length,cor:T.lavDark},
+    {ico:"📄",label:"Páginas lidas",val:totalPags.toLocaleString("pt-BR"),cor:T.roseDark},
+    {ico:"⏱️",label:"Tempo estimado",val:`~${tempoEst}h`,cor:T.mintDark},
+    {ico:"⭐",label:"Média de avaliações",val:avg?avg.toFixed(1)+"★":"—",cor:T.star},
+    {ico:"❤️",label:"Livro favorito",val:melhorNota?.titulo||"—",cor:T.red,small:true},
+    {ico:"📈",label:"Gênero mais lido",val:topGenero?`${topGenero[0]} (${topGenero[1]}x)`:"—",cor:T.lavDark,small:true},
+    {ico:"✍️",label:"Autor mais lido",val:topAutor?`${topAutor[0]} (${topAutor[1]}x)`:"—",cor:T.mid,small:true},
+    {ico:"📖",label:"Livro mais longo",val:maisPags?`${maisPags.titulo} (${maisPags.paginas}p)`:"—",cor:T.sky,small:true},
+    {ico:"👎",label:"Maior decepção",val:piorNota?.titulo||"—",cor:T.muted,small:true},
+  ];
+
+  return(
+    <div style={{paddingBottom:32}}>
+      <div style={{textAlign:"center",marginBottom:24}}>
+        <div style={{fontSize:32,marginBottom:4}}>🎬</div>
+        <div style={{color:T.text,fontSize:18,fontWeight:900,marginBottom:4}}>Retrospectiva {ANO}</div>
+        <div style={{color:T.muted,fontSize:13}}>Sua jornada literária em números</div>
+      </div>
+      {!lidos.length?(
+        <div style={{textAlign:"center",padding:"40px 0",color:T.muted}}>
+          <div style={{fontSize:44,marginBottom:10}}>📚</div>
+          <div style={{color:T.text,fontSize:15,fontWeight:700}}>Complete leituras para ver sua retrospectiva!</div>
+        </div>
+      ):(
+        <div style={{display:"grid",gridTemplateColumns:"repeat(2,1fr)",gap:12}}>
+          {ITEMS.map((s,i)=>(
+            <div key={i} style={{background:T.card,borderRadius:16,padding:"16px 14px",border:`1.5px solid ${T.border}`,textAlign:"center"}}>
+              <div style={{fontSize:26,marginBottom:6}}>{s.ico}</div>
+              <div style={{color:s.cor,fontSize:s.small?13:20,fontWeight:900,marginBottom:3,overflow:"hidden",display:"-webkit-box",WebkitLineClamp:2,WebkitBoxOrient:"vertical"}}>{s.val}</div>
+              <div style={{color:T.muted,fontSize:10}}>{s.label}</div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
+// ══════════════════════════════════════════
+// RANKINGS
+// ══════════════════════════════════════════
+const Rankings=({livros,navegar,T})=>{
+  const[aba,setAba]=useState("livros");
+  const top10Livros=[...livros].filter(b=>b.nota>0).sort((a,b)=>b.nota-a.nota).slice(0,10);
+  const autorCount={};livros.forEach(b=>{if(b.autor)autorCount[b.autor]=(autorCount[b.autor]||0)+1;});
+  const top10Autores=Object.entries(autorCount).sort((a,b)=>b[1]-a[1]).slice(0,10);
+  const serieCount={};livros.forEach(b=>{if(b.serie)serieCount[b.serie]=(serieCount[b.serie]||0)+1;});
+  const top10Series=Object.entries(serieCount).sort((a,b)=>b[1]-a[1]).slice(0,10);
+
+  const ABAS=[{id:"livros",l:"⭐ Top Livros"},{id:"autores",l:"✍️ Top Autores"},{id:"series",l:"📚 Top Séries"}];
+
+  return(
+    <div style={{paddingBottom:32}}>
+      <div style={{textAlign:"center",marginBottom:20}}>
+        <div style={{fontSize:28,marginBottom:4}}>🏆</div>
+        <div style={{color:T.text,fontSize:18,fontWeight:900,marginBottom:4}}>Rankings Pessoais</div>
+        <div style={{color:T.muted,fontSize:13}}>Seus favoritos de todos os tempos</div>
+      </div>
+      <div style={{display:"flex",gap:6,marginBottom:18,justifyContent:"center"}}>
+        {ABAS.map(a=><button key={a.id} onClick={()=>setAba(a.id)} style={{background:aba===a.id?`linear-gradient(135deg,${T.rose},${T.roseDark})`:T.card,color:aba===a.id?"#fff":T.mid,border:`1.5px solid ${aba===a.id?T.rose:T.border}`,borderRadius:20,padding:"7px 14px",fontSize:12,fontWeight:700,cursor:"pointer",transition:"all .2s"}}>{a.l}</button>)}
+      </div>
+
+      {aba==="livros"&&(
+        top10Livros.length===0?<div style={{textAlign:"center",padding:"32px 0",color:T.muted}}>Avalie livros para criar seu ranking!</div>:
+        <div style={{display:"flex",flexDirection:"column",gap:10}}>
+          {top10Livros.map((b,i)=>(
+            <div key={b.id} onClick={()=>navegar("detalhe",{livro:b})} style={{background:T.card,borderRadius:14,padding:"12px 14px",border:`1.5px solid ${i<3?T.rose:T.border}`,display:"flex",alignItems:"center",gap:12,cursor:"pointer",transition:"all .2s"}}
+              onMouseEnter={e=>{e.currentTarget.style.transform="translateX(4px)";e.currentTarget.style.borderColor=T.rose;}}
+              onMouseLeave={e=>{e.currentTarget.style.transform="none";e.currentTarget.style.borderColor=i<3?T.rose:T.border;}}>
+              <div style={{fontSize:22,minWidth:32,textAlign:"center"}}>{["🥇","🥈","🥉"][i]||`${i+1}º`}</div>
+              <div style={{width:44,height:65,borderRadius:8,overflow:"hidden",flexShrink:0}}><Capa livro={b} w="44px" h="65px" r={8} T={T}/></div>
+              <div style={{flex:1,minWidth:0}}>
+                <div style={{color:T.text,fontSize:13,fontWeight:800,overflow:"hidden",whiteSpace:"nowrap",textOverflow:"ellipsis"}}>{b.titulo}</div>
+                <div style={{color:T.muted,fontSize:11,marginBottom:4}}>{b.autor}</div>
+                <Estrelas val={b.nota} ro tam={14}/>
+              </div>
+              {b.paginas>0&&<div style={{color:T.muted,fontSize:11,flexShrink:0}}>{b.paginas}p</div>}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {aba==="autores"&&(
+        top10Autores.length===0?<div style={{textAlign:"center",padding:"32px 0",color:T.muted}}>Nenhum autor cadastrado ainda.</div>:
+        <div style={{display:"flex",flexDirection:"column",gap:8}}>
+          {top10Autores.map(([autor,n],i)=>(
+            <div key={autor} onClick={()=>navegar("lista",{autor})} style={{background:T.card,borderRadius:14,padding:"14px 16px",border:`1.5px solid ${T.border}`,display:"flex",alignItems:"center",gap:12,cursor:"pointer",transition:"all .2s"}}
+              onMouseEnter={e=>{e.currentTarget.style.borderColor=T.lav;e.currentTarget.style.transform="translateX(4px)";}}
+              onMouseLeave={e=>{e.currentTarget.style.borderColor=T.border;e.currentTarget.style.transform="none";}}>
+              <div style={{fontSize:20,minWidth:32,textAlign:"center"}}>{["🥇","🥈","🥉"][i]||`${i+1}º`}</div>
+              <div style={{flex:1}}><div style={{color:T.text,fontSize:14,fontWeight:700}}>{autor}</div><div style={{color:T.muted,fontSize:11}}>{n} livro(s)</div></div>
+              <span style={{background:T.lavLight,color:T.lavDark,fontSize:12,fontWeight:800,padding:"4px 10px",borderRadius:99}}>{n}</span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {aba==="series"&&(
+        top10Series.length===0?<div style={{textAlign:"center",padding:"32px 0",color:T.muted}}>Nenhuma série cadastrada ainda.<br/><span style={{fontSize:12}}>Adicione a série ao editar um livro.</span></div>:
+        <div style={{display:"flex",flexDirection:"column",gap:8}}>
+          {top10Series.map(([serie,n],i)=>(
+            <div key={serie} style={{background:T.card,borderRadius:14,padding:"14px 16px",border:`1.5px solid ${T.border}`,display:"flex",alignItems:"center",gap:12}}>
+              <div style={{fontSize:20,minWidth:32,textAlign:"center"}}>{["🥇","🥈","🥉"][i]||`${i+1}º`}</div>
+              <div style={{flex:1}}><div style={{color:T.text,fontSize:14,fontWeight:700}}>{serie}</div><div style={{color:T.muted,fontSize:11}}>{n} livro(s) cadastrado(s)</div></div>
+              <Barra val={(n/5)*100} cor={T.rose} h={5} T={T}/>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
+// ══════════════════════════════════════════
+// DESAFIOS
+// ══════════════════════════════════════════
+const Desafios=({livros,T})=>(
+  <div style={{paddingBottom:32}}>
+    <div style={{textAlign:"center",marginBottom:20}}>
+      <div style={{fontSize:28,marginBottom:4}}>🎯</div>
+      <div style={{color:T.text,fontSize:18,fontWeight:900,marginBottom:4}}>Desafios</div>
+      <div style={{color:T.muted,fontSize:13}}>Complete desafios e ganhe medalhas</div>
+    </div>
+    <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(160px,1fr))",gap:12}}>
+      {DESAFIOS.map(d=>{
+        const ok=d.check(livros);
+        return(
+          <div key={d.id} style={{background:T.card,borderRadius:16,padding:"18px 14px",border:`2px solid ${ok?T.mint:T.border}`,textAlign:"center",opacity:ok?1:.7,transition:"all .3s",boxShadow:ok?`0 4px 16px ${T.mint}25`:"none"}}>
+            <div style={{fontSize:32,marginBottom:8,filter:ok?"none":"grayscale(1)"}}>{d.ico}</div>
+            <div style={{color:T.text,fontSize:12,fontWeight:800,marginBottom:4}}>{d.nome}</div>
+            <div style={{color:T.muted,fontSize:10,lineHeight:1.4,marginBottom:8}}>{d.desc}</div>
+            <span style={{background:ok?T.mintLight:T.grayLight,color:ok?T.mintDark:T.muted,fontSize:9,fontWeight:800,padding:"3px 8px",borderRadius:99}}>
+              {ok?"✓ Completo!":"Em progresso..."}
+            </span>
+          </div>
+        );
+      })}
+    </div>
+  </div>
+);
+
+// ══════════════════════════════════════════
+// CONQUISTAS
+// ══════════════════════════════════════════
+const Conquistas=({livros,T})=>(
+  <div style={{paddingBottom:32}}>
+    <div style={{textAlign:"center",marginBottom:20}}>
+      <div style={{fontSize:28,marginBottom:4}}>🏅</div>
+      <div style={{color:T.text,fontSize:18,fontWeight:900,marginBottom:4}}>Conquistas</div>
+      <div style={{color:T.muted,fontSize:13}}>Medalhas da sua jornada literária</div>
+    </div>
+    <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(155px,1fr))",gap:12}}>
+      {CONQUISTAS.map(c=>{
+        const ok=c.check(livros);
+        return(
+          <div key={c.id} style={{background:T.card,borderRadius:16,padding:"18px 14px",border:`2px solid ${ok?T.rose:T.border}`,textAlign:"center",opacity:ok?1:.5,transition:"all .3s",boxShadow:ok?`0 4px 16px ${T.rose}25`:"none"}}>
+            <div style={{fontSize:32,marginBottom:8,filter:ok?"none":"grayscale(1)"}}>{c.ico}</div>
+            <div style={{color:T.text,fontSize:12,fontWeight:800,marginBottom:4}}>{c.nome}</div>
+            <div style={{color:T.muted,fontSize:10,lineHeight:1.4,marginBottom:ok?8:0}}>{c.desc}</div>
+            {ok&&<div style={{background:T.roseLight,color:T.roseDark,fontSize:9,fontWeight:800,padding:"3px 8px",borderRadius:99,display:"inline-block"}}>✓ Desbloqueada!</div>}
+          </div>
+        );
+      })}
+    </div>
+  </div>
+);
+
+// ══════════════════════════════════════════
+// CALENDÁRIO DE LEITURA
+// ══════════════════════════════════════════
+const Calendario=({livros,T})=>{
+  const hoje=new Date();
+  const[ano,setAno]=useState(hoje.getFullYear());
+  const[mes,setMes]=useState(hoje.getMonth());
+
+  const diasComLeitura=useMemo(()=>{
+    const s=new Set();
+    livros.forEach(b=>(b.entradas||[]).forEach(e=>{if(e.data)s.add(e.data);}));
+    livros.filter(b=>b.finalizadoEm).forEach(b=>s.add(b.finalizadoEm));
+    return s;
+  },[livros]);
+
+  const primeiroDia=new Date(ano,mes,1).getDay();
+  const diasNoMes=new Date(ano,mes+1,0).getDate();
+  const diasComLeituraMes=[...diasComLeitura].filter(d=>d.startsWith(`${ano}-${String(mes+1).padStart(2,"0")}`));
+  const diasLidosMes=diasComLeituraMes.length;
+
+  const prev=()=>{if(mes===0){setMes(11);setAno(a=>a-1);}else setMes(m=>m-1);};
+  const next=()=>{if(mes===11){setMes(0);setAno(a=>a+1);}else setMes(m=>m+1);};
+
+  return(
+    <div style={{paddingBottom:32}}>
+      <div style={{textAlign:"center",marginBottom:20}}>
+        <div style={{fontSize:28,marginBottom:4}}>📅</div>
+        <div style={{color:T.text,fontSize:18,fontWeight:900,marginBottom:4}}>Calendário de Leitura</div>
+        <div style={{color:T.muted,fontSize:13}}>Dias em que você leu</div>
+      </div>
+
+      {/* Navegação */}
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
+        <button onClick={prev} style={{background:T.card,border:`1.5px solid ${T.border}`,borderRadius:12,padding:"8px 16px",color:T.text,fontWeight:700,fontSize:14,cursor:"pointer"}}>←</button>
+        <div style={{color:T.text,fontSize:16,fontWeight:900}}>{MESES[mes]} {ano}</div>
+        <button onClick={next} style={{background:T.card,border:`1.5px solid ${T.border}`,borderRadius:12,padding:"8px 16px",color:T.text,fontWeight:700,fontSize:14,cursor:"pointer"}}>→</button>
+      </div>
+
+      {/* Dias da semana */}
+      <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:4,marginBottom:6}}>
+        {["Dom","Seg","Ter","Qua","Qui","Sex","Sáb"].map(d=>(
+          <div key={d} style={{textAlign:"center",color:T.muted,fontSize:10,fontWeight:700,padding:"4px 0"}}>{d}</div>
+        ))}
+      </div>
+
+      {/* Grade de dias */}
+      <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:4,marginBottom:20}}>
+        {Array.from({length:primeiroDia}).map((_,i)=><div key={`e${i}`}/>)}
+        {Array.from({length:diasNoMes}).map((_,i)=>{
+          const dia=i+1;
+          const dataStr=`${ano}-${String(mes+1).padStart(2,"0")}-${String(dia).padStart(2,"0")}`;
+          const leu=diasComLeitura.has(dataStr);
+          const eHoje=dataStr===HOJE;
+          return(
+            <div key={dia} style={{aspectRatio:"1",borderRadius:8,display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,fontWeight:eHoje?900:400,background:leu?T.mintDark:T.card,color:leu?"#fff":eHoje?T.roseDark:T.text,border:`1.5px solid ${eHoje?T.rose:leu?T.mintDark:T.border}`,transition:"all .2s"}}>
+              {dia}
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Resumo */}
+      <div style={{background:T.card,borderRadius:16,padding:18,border:`1.5px solid ${T.border}`,textAlign:"center"}}>
+        <div style={{display:"flex",justifyContent:"center",gap:16,marginBottom:12}}>
+          <div style={{display:"flex",alignItems:"center",gap:6}}><div style={{width:16,height:16,borderRadius:4,background:T.mintDark}}/><span style={{color:T.text,fontSize:12}}>Dia com leitura</span></div>
+          <div style={{display:"flex",alignItems:"center",gap:6}}><div style={{width:16,height:16,borderRadius:4,background:T.card,border:`1.5px solid ${T.border}`}}/><span style={{color:T.text,fontSize:12}}>Sem leitura</span></div>
+        </div>
+        <div style={{color:T.text,fontSize:14,fontWeight:800}}>
+          {diasLidosMes>0
+            ?`🟩 Você leu em ${diasLidosMes} dos ${diasNoMes} dias de ${MESES[mes]}!`
+            :`Nenhum dia de leitura registrado em ${MESES[mes]}.`
+          }
+        </div>
+        {diasLidosMes>0&&(
+          <div style={{marginTop:8}}>
+            <Barra val={(diasLidosMes/diasNoMes)*100} cor={T.mintDark} h={8} T={T}/>
+            <div style={{color:T.muted,fontSize:11,marginTop:4}}>{Math.round((diasLidosMes/diasNoMes)*100)}% do mês</div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
+// ══════════════════════════════════════════
+// METAS
+// ══════════════════════════════════════════
+const Metas=({livros,metas,setMetas,T})=>{
+  const lidos=livros.filter(b=>b.status==="lido");
+  const anoAtual=lidos.filter(b=>b.finalizadoEm?.startsWith(String(ANO)));
+  const now=new Date();
+  const mesAtual=lidos.filter(b=>{const d=new Date(b.finalizadoEm||"");return d.getFullYear()===ANO&&d.getMonth()===now.getMonth();});
+  const ini=new Date();ini.setDate(ini.getDate()-ini.getDay());
+  const semAtual=lidos.filter(b=>{const d=new Date(b.finalizadoEm||"");return d>=ini;});
+  const totalPags=lidos.reduce((s,b)=>s+(b.paginas||0),0);
+
+  const MB=({ico,label,atual,meta,cor,onMeta})=>{
+    const[edit,setEdit]=useState(false);const[v,setV]=useState(String(meta));
+    const pct=Math.min(100,Math.round((atual/Math.max(meta,1))*100));
+    return(
+      <div style={{background:T.card,borderRadius:16,padding:"18px 20px",border:`1.5px solid ${T.border}`,marginBottom:12}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
+          <div style={{display:"flex",alignItems:"center",gap:8}}><span style={{fontSize:22}}>{ico}</span><span style={{color:T.text,fontSize:14,fontWeight:800}}>{label}</span></div>
+          {edit?(
+            <div style={{display:"flex",gap:6,alignItems:"center"}}>
+              <input type="number" value={v} onChange={e=>setV(e.target.value)} style={{width:70,background:T.bgAlt,border:`1.5px solid ${T.border}`,borderRadius:8,padding:"4px 8px",color:T.text,fontSize:13,outline:"none"}}/>
+              <button onClick={()=>{onMeta(Number(v)||meta);setEdit(false);}} style={{background:T.mintLight,border:"none",borderRadius:8,padding:"4px 10px",color:T.mintDark,fontWeight:700,fontSize:12,cursor:"pointer"}}>OK</button>
+            </div>
+          ):(
+            <button onClick={()=>setEdit(true)} style={{background:T.lavLight,border:"none",borderRadius:8,padding:"4px 10px",color:T.lavDark,fontWeight:700,fontSize:11,cursor:"pointer"}}>✏️ Meta: {meta}</button>
+          )}
+        </div>
+        <Barra val={pct} cor={cor} h={12} T={T}/>
+        <div style={{display:"flex",justifyContent:"space-between",marginTop:8}}>
+          <span style={{color:cor,fontWeight:900,fontSize:18}}>{atual}/{meta}</span>
+          <span style={{color:T.muted,fontSize:12,alignSelf:"flex-end"}}>{pct}% · {Math.max(0,meta-atual)} restantes</span>
+        </div>
+      </div>
+    );
+  };
+
+  return(
+    <div style={{paddingBottom:32}}>
+      <div style={{textAlign:"center",marginBottom:20}}>
+        <div style={{fontSize:28,marginBottom:4}}>🎯</div>
+        <div style={{color:T.text,fontSize:18,fontWeight:900,marginBottom:4}}>Metas de Leitura</div>
+        <div style={{color:T.muted,fontSize:13}}>Toque em "Meta" para editar</div>
+      </div>
+      <MB ico="📅" label={`Meta anual ${ANO}`} atual={anoAtual.length} meta={metas.anual} cor={T.roseDark} onMeta={v=>setMetas(m=>({...m,anual:v}))}/>
+      <MB ico="🗓️" label="Meta mensal" atual={mesAtual.length} meta={metas.mensal} cor={T.lavDark} onMeta={v=>setMetas(m=>({...m,mensal:v}))}/>
+      <MB ico="📆" label="Meta semanal" atual={semAtual.length} meta={metas.semanal} cor={T.mintDark} onMeta={v=>setMetas(m=>({...m,semanal:v}))}/>
+      <MB ico="📄" label="Meta de páginas" atual={totalPags} meta={metas.paginas} cor="#B8860B" onMeta={v=>setMetas(m=>({...m,paginas:v}))}/>
+    </div>
+  );
+};
+
+// ══════════════════════════════════════════
+// ESTATÍSTICAS
+// ══════════════════════════════════════════
+const Estatisticas=({livros,navegar,T})=>{
+  const lidos=livros.filter(b=>b.status==="lido");
+  const pags=lidos.reduce((s,b)=>s+(b.paginas||0),0);
+  const avg=lidos.filter(b=>b.nota>0).reduce((s,b,_,a)=>s+b.nota/a.length,0);
+  const gc={};livros.forEach(b=>(b.genero||[]).forEach(g=>{gc[g]=(gc[g]||0)+1;}));
+  const topG=Object.entries(gc).sort((a,b)=>b[1]-a[1]).slice(0,8);
+  const ac={};livros.forEach(b=>{if(b.autor)ac[b.autor]=(ac[b.autor]||0)+1;});
+  const topA=Object.entries(ac).sort((a,b)=>b[1]-a[1]).slice(0,6);
+
+  const SC=({ico,val,label,cor,onClick})=>(
+    <div onClick={onClick} style={{background:T.card,borderRadius:14,padding:"14px 12px",border:`1.5px solid ${T.border}`,textAlign:"center",cursor:onClick?"pointer":"default",transition:"all .2s"}}
+      onMouseEnter={e=>{if(onClick){e.currentTarget.style.borderColor=cor;e.currentTarget.style.transform="translateY(-3px)";}}}
+      onMouseLeave={e=>{e.currentTarget.style.borderColor=T.border;e.currentTarget.style.transform="none";}}>
+      <div style={{fontSize:22,marginBottom:3}}>{ico}</div>
+      <div style={{color:cor,fontSize:20,fontWeight:900}}>{val}</div>
+      <div style={{color:T.muted,fontSize:10,marginTop:2}}>{label}</div>
+    </div>
+  );
+
+  return(
+    <div style={{paddingBottom:32}}>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10,marginBottom:10}}>
+        <SC ico="📚" val={livros.length} label="Total" cor={T.lavDark} onClick={()=>navegar("lista",{status:"todos"})}/>
+        <SC ico="✅" val={lidos.length} label="Lidos" cor="#2E7D32" onClick={()=>navegar("lista",{status:"lido"})}/>
+        <SC ico="📖" val={livros.filter(b=>b.status==="lendo").length} label="Lendo" cor="#B8860B" onClick={()=>navegar("lista",{status:"lendo"})}/>
+        <SC ico="📄" val={pags.toLocaleString("pt-BR")} label="Páginas" cor={T.roseDark}/>
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14,marginTop:14}}>
+        <div style={{background:T.card,borderRadius:14,padding:"16px 18px",border:`1.5px solid ${T.border}`}}>
+          <div style={{color:T.text,fontSize:13,fontWeight:800,marginBottom:10}}>⭐ Avaliação média</div>
+          <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:6}}>
+            <div style={{color:T.star,fontSize:30,fontWeight:900}}>{avg?avg.toFixed(1):"—"}</div>
+            <Estrelas val={Math.round(avg)} ro tam={18}/>
+          </div>
+          <div style={{color:T.muted,fontSize:11}}>{lidos.filter(b=>b.nota>0).length} avaliados</div>
+        </div>
+        <div style={{background:T.card,borderRadius:14,padding:"16px 18px",border:`1.5px solid ${T.border}`}}>
+          <div style={{color:T.text,fontSize:13,fontWeight:800,marginBottom:10}}>❤️ Favoritos</div>
+          {livros.filter(b=>b.fav).slice(0,4).map(b=>(
+            <div key={b.id} onClick={()=>navegar("detalhe",{livro:b})} style={{display:"flex",alignItems:"center",gap:6,marginBottom:5,cursor:"pointer",padding:"3px 4px",borderRadius:7,transition:"background .15s"}}
+              onMouseEnter={e=>e.currentTarget.style.background=T.roseLight}
+              onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
+              <span style={{fontSize:12}}>❤️</span><span style={{color:T.text,fontSize:11,fontWeight:700,flex:1,overflow:"hidden",whiteSpace:"nowrap",textOverflow:"ellipsis"}}>{b.titulo}</span>
+            </div>
+          ))}
+          {!livros.filter(b=>b.fav).length&&<div style={{color:T.muted,fontSize:12}}>Nenhum favorito ainda</div>}
+        </div>
+        <div style={{background:T.card,borderRadius:14,padding:"16px 18px",border:`1.5px solid ${T.border}`}}>
+          <div style={{color:T.text,fontSize:13,fontWeight:800,marginBottom:10}}>🏷️ Gêneros</div>
+          {topG.map(([g,n])=>(
+            <div key={g} onClick={()=>navegar("lista",{genero:g})} style={{marginBottom:6,cursor:"pointer",padding:"3px 4px",borderRadius:7,transition:"background .15s"}}
+              onMouseEnter={e=>e.currentTarget.style.background=T.lavLight}
+              onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
+              <div style={{display:"flex",justifyContent:"space-between",marginBottom:2}}>
+                <span style={{color:T.text,fontSize:11}}>{g}</span><span style={{color:T.muted,fontSize:11}}>{n}</span>
+              </div>
+              <Barra val={(n/Math.max(livros.length,1))*100} cor={T.lav} T={T} h={4}/>
+            </div>
+          ))}
+        </div>
+        <div style={{background:T.card,borderRadius:14,padding:"16px 18px",border:`1.5px solid ${T.border}`}}>
+          <div style={{color:T.text,fontSize:13,fontWeight:800,marginBottom:10}}>✍️ Autores</div>
+          {topA.map(([a,n],i)=>(
+            <div key={a} onClick={()=>navegar("lista",{autor:a})} style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:7,cursor:"pointer",padding:"3px 4px",borderRadius:7,transition:"background .15s"}}
+              onMouseEnter={e=>e.currentTarget.style.background=T.lavLight}
+              onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
+              <div style={{display:"flex",alignItems:"center",gap:6}}><span style={{color:T.muted,fontSize:11,minWidth:16}}>{i+1}</span><span style={{color:T.text,fontSize:11}}>{a}</span></div>
+              <span style={{background:T.roseLight,color:T.roseDark,fontSize:9,fontWeight:700,padding:"2px 7px",borderRadius:99}}>{n}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ══════════════════════════════════════════
+// DASHBOARD — HOME
+// ══════════════════════════════════════════
+const Dashboard=({livros,metas,navegar,T})=>{
+  const lidos=livros.filter(b=>b.status==="lido");
+  const lendo=livros.filter(b=>b.status==="lendo");
+  const quero=livros.filter(b=>b.status==="quero ler");
+  const pausados=livros.filter(b=>b.status==="pausado");
+  const favs=livros.filter(b=>b.fav);
+  const pags=lidos.reduce((s,b)=>s+(b.paginas||0),0);
+  const avg=lidos.filter(b=>b.nota>0).reduce((s,b,_,a)=>s+b.nota/a.length,0);
+  const anoAtual=lidos.filter(b=>b.finalizadoEm?.startsWith(String(ANO)));
+  const pct=Math.round((anoAtual.length/Math.max(metas.anual,1))*100);
+  const recentes=[...livros].sort((a,b)=>(b.adicionadoEm||"").localeCompare(a.adicionadoEm||"")).slice(0,8);
+  const lidosRecentes=[...lidos].sort((a,b)=>(b.finalizadoEm||"").localeCompare(a.finalizadoEm||"")).slice(0,8);
+
+  const DC=({ico,val,label,cor,onClick,sub})=>(
+    <div onClick={onClick} style={{background:T.card,borderRadius:14,padding:"14px 10px",border:`1.5px solid ${T.border}`,textAlign:"center",cursor:onClick?"pointer":"default",transition:"all .2s",flex:1,minWidth:0}}
+      onMouseEnter={e=>{if(onClick){e.currentTarget.style.borderColor=cor;e.currentTarget.style.transform="translateY(-3px)";e.currentTarget.style.boxShadow=`0 6px 18px ${cor}25`;}}}
+      onMouseLeave={e=>{e.currentTarget.style.borderColor=T.border;e.currentTarget.style.transform="none";e.currentTarget.style.boxShadow="none";}}>
+      <div style={{fontSize:20,marginBottom:3}}>{ico}</div>
+      <div style={{color:cor,fontSize:18,fontWeight:900,lineHeight:1}}>{val}</div>
+      <div style={{color:T.muted,fontSize:9,marginTop:2}}>{label}</div>
+    </div>
+  );
+
+  return(
+    <div style={{paddingBottom:24}}>
+      {/* Hero */}
+      <div style={{background:T.head,borderRadius:20,padding:"20px 20px 18px",marginBottom:20,border:`1px solid ${T.border}`}}>
+        <div style={{color:T.text,fontSize:20,fontWeight:900,marginBottom:3}}>📖 Diário de Leitura</div>
+        <div style={{color:T.mid,fontSize:13,marginBottom:16}}>Sua jornada literária ✨</div>
+        <div style={{background:"rgba(255,255,255,.2)",borderRadius:12,padding:"12px 16px"}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+            <span style={{color:T.text,fontSize:13,fontWeight:700}}>🎯 Meta {ANO}</span>
+            <span style={{color:T.roseDark,fontSize:13,fontWeight:900}}>{anoAtual.length}/{metas.anual}</span>
+          </div>
+          <Barra val={pct} cor={T.rose} T={T} h={10}/>
+          <div style={{color:T.mid,fontSize:11,marginTop:6}}>{pct}% · {Math.max(0,metas.anual-anoAtual.length)} restantes</div>
+        </div>
+      </div>
+
+      {/* Stats rápidos */}
+      <div style={{display:"flex",gap:8,marginBottom:8,overflowX:"auto",scrollbarWidth:"none"}}>
+        <DC ico="📚" val={livros.length} label="Total" cor={T.lavDark} onClick={()=>navegar("biblioteca")}/>
+        <DC ico="✅" val={lidos.length} label="Lidos" cor="#2E7D32" onClick={()=>navegar("lista",{status:"lido"})}/>
+        <DC ico="📖" val={lendo.length} label="Lendo" cor="#B8860B" onClick={()=>navegar("lista",{status:"lendo"})}/>
+        <DC ico="📚" val={quero.length} label="Quero ler" cor={T.lavDark} onClick={()=>navegar("lista",{status:"quero ler"})}/>
+      </div>
+      <div style={{display:"flex",gap:8,marginBottom:20,overflowX:"auto",scrollbarWidth:"none"}}>
+        <DC ico="⏸️" val={pausados.length} label="Pausados" cor="#1565C0" onClick={()=>navegar("lista",{status:"pausado"})}/>
+        <DC ico="❤️" val={favs.length} label="Favoritos" cor={T.red} onClick={()=>navegar("lista",{favoritos:true})}/>
+        <DC ico="📄" val={pags.toLocaleString("pt-BR")} label="Páginas" cor={T.roseDark}/>
+        <DC ico="⭐" val={avg?avg.toFixed(1):"—"} label="Média" cor={T.star}/>
+      </div>
+
+      {/* Prateleiras */}
+      {lendo.length>0&&(
+        <div style={{marginBottom:24}}>
+          <div style={{color:T.text,fontSize:15,fontWeight:900,marginBottom:12}}>📖 Continue lendo</div>
+          {lendo.slice(0,3).map(b=>(
+            <div key={b.id} onClick={()=>navegar("detalhe",{livro:b})} style={{background:T.card,borderRadius:14,padding:"12px 14px",border:`1.5px solid ${T.border}`,display:"flex",gap:12,alignItems:"center",cursor:"pointer",marginBottom:8,transition:"all .2s"}}
+              onMouseEnter={e=>{e.currentTarget.style.borderColor=T.rose;e.currentTarget.style.transform="translateX(4px)";}}
+              onMouseLeave={e=>{e.currentTarget.style.borderColor=T.border;e.currentTarget.style.transform="none";}}>
+              <div style={{width:44,height:65,borderRadius:8,overflow:"hidden",flexShrink:0}}><Capa livro={b} w="44px" h="65px" r={8} T={T}/></div>
+              <div style={{flex:1,minWidth:0}}>
+                <div style={{color:T.text,fontSize:13,fontWeight:800,marginBottom:2,overflow:"hidden",whiteSpace:"nowrap",textOverflow:"ellipsis"}}>{b.titulo}</div>
+                <div style={{color:T.muted,fontSize:11,marginBottom:5}}>{b.autor}</div>
+                <Barra val={b.progresso||0} T={T} h={6}/>
+                <div style={{color:T.roseDark,fontSize:10,fontWeight:700,marginTop:3}}>{b.progresso||0}%{b.paginas>0?` · ${Math.round((b.progresso||0)/100*b.paginas)}/${b.paginas}p`:""}</div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <Prateleira titulo="⏱️ Últimos adicionados" livros={recentes} onLivro={b=>navegar("detalhe",{livro:b})} onFav={()=>{}} T={T}/>
+      <Prateleira titulo="✅ Lidos recentemente" livros={lidosRecentes} onLivro={b=>navegar("detalhe",{livro:b})} onFav={()=>{}} T={T}/>
+      <Prateleira titulo="❤️ Favoritos" livros={favs.slice(0,8)} onLivro={b=>navegar("detalhe",{livro:b})} onFav={()=>{}} T={T}/>
+      <Prateleira titulo="📚 Quero ler" livros={quero.slice(0,8)} onLivro={b=>navegar("detalhe",{livro:b})} onFav={()=>{}} T={T}/>
+      {pausados.length>0&&<Prateleira titulo="⏸️ Pausados" livros={pausados} onLivro={b=>navegar("detalhe",{livro:b})} onFav={()=>{}} T={T}/>}
+    </div>
+  );
+};
+
+// ══════════════════════════════════════════
+// APP DIÁRIO (usuário)
+// ══════════════════════════════════════════
+const TelaDiario=({user,perfil,sair,T,darkMode,setDarkMode})=>{
+  const[livros,setLivros]=useState([]);
+  const[metas,setMetas]=useState(METAS_DEFAULT);
+  const[carregando,setCarregando]=useState(true);
+
+  const[hist,setHist]=useState([{view:"home",p:{}}]);
+  const atual=hist[hist.length-1];const{view,p}=atual;const podeVoltar=hist.length>1;
+
+  const[formLivro,setFormLivro]=useState(false);const[editLivro,setEditLivro]=useState(null);
+  const[busca,setBusca]=useState("");const[filtStatus,setFiltStatus]=useState("todos");
+  const[filtGenero,setFiltGenero]=useState("todos");const[filtAno,setFiltAno]=useState("todos");
+  const[ordem,setOrdem]=useState("adicionadoEm");const[soFav,setSoFav]=useState(false);
+
+  useEffect(()=>{
+    if(!user?.uid)return;
+    Promise.all([
+      db.collection("users").doc(user.uid).collection("livros").get(),
+      db.collection("users").doc(user.uid).collection("metas").doc("main").get()
+    ]).then(([lS,mS])=>{
+      setLivros(lS.docs.map(d=>d.data()));
+      if(mS.exists)setMetas(mS.data());
+      setCarregando(false);
+    }).catch(()=>setCarregando(false));
+  },[user?.uid]);
+
+  useEffect(()=>{
+    if(!user?.uid||carregando)return;
+    db.collection("users").doc(user.uid).collection("metas").doc("main").set(metas);
+  },[metas]);
+
+  const nav=(v,params={})=>{setHist(h=>[...h,{view:v,params,p:params}]);window.scrollTo(0,0);};
+  const voltar=useCallback(()=>{setHist(h=>h.length>1?h.slice(0,-1):h);window.scrollTo(0,0);},[]);
+  const irAba=aba=>{setHist([{view:aba,p:{}}]);window.scrollTo(0,0);};
+
+  useEffect(()=>{
+    window.history.pushState(null,"",window.location.href);
+    const fn=e=>{e.preventDefault();voltar();window.history.pushState(null,"",window.location.href);};
+    window.addEventListener("popstate",fn);
+    return()=>window.removeEventListener("popstate",fn);
+  },[voltar]);
+
+  const salvarLivro=async livro=>{
+    const novo=livros.some(b=>b.id===livro.id)?livros.map(b=>b.id===livro.id?livro:b):[...livros,livro];
+    setLivros(novo);
+    await db.collection("users").doc(user.uid).collection("livros").doc(String(livro.id)).set(livro);
+    setFormLivro(false);setEditLivro(null);
+    if(view==="detalhe")setHist(h=>h.map((x,i)=>i===h.length-1?{...x,p:{...x.p,livro}}:x));
+  };
+  const removerLivro=async id=>{setLivros(l=>l.filter(b=>b.id!==id));await db.collection("users").doc(user.uid).collection("livros").doc(String(id)).delete();voltar();};
+  const toggleFav=async id=>{const novo=livros.map(b=>b.id===id?{...b,fav:!b.fav}:b);setLivros(novo);const livro=novo.find(b=>b.id===id);await db.collection("users").doc(user.uid).collection("livros").doc(String(id)).set(livro);};
+  const addDoDescobrir=async r=>{
+    if(livros.find(b=>b.titulo.toLowerCase()===r.titulo.toLowerCase())){alert("Já está na biblioteca!");return;}
+    const nb={id:gid(),titulo:r.titulo,autor:r.autor,genero:r.genero?.slice(0,2)||[],serie:"",status:"quero ler",nota:0,progresso:0,capa:r.capa,paginas:r.paginas||0,ano:r.ano||"",adicionadoEm:HOJE,finalizadoEm:null,sinopse:r.sinopse||"",resenha:"",entradas:[],tags:[],fav:false};
+    setLivros(l=>[...l,nb]);
+    await db.collection("users").doc(user.uid).collection("livros").doc(String(nb.id)).set(nb);
+  };
+
+  const todosGeneros=[...new Set(livros.flatMap(b=>b.genero||[]))].sort();
+  const todosAnos=[...new Set(livros.map(b=>b.ano).filter(Boolean))].sort((a,b)=>b-a);
+
+  const filtrados=livros.filter(b=>{
+    const q=busca.toLowerCase();
+    const ms=!q||b.titulo.toLowerCase().includes(q)||b.autor.toLowerCase().includes(q)||(b.genero||[]).some(g=>g.toLowerCase().includes(q))||(b.tags||[]).some(t=>t.toLowerCase().includes(q))||(b.serie||"").toLowerCase().includes(q)||(b.ano||"").includes(q);
+    return ms&&(filtStatus==="todos"||b.status===filtStatus)&&(filtGenero==="todos"||(b.genero||[]).includes(filtGenero))&&(filtAno==="todos"||b.ano===filtAno)&&(!soFav||b.fav);
+  }).sort((a,b)=>{
+    if(ordem==="titulo")return a.titulo.localeCompare(b.titulo);
+    if(ordem==="autor")return(a.autor||"").localeCompare(b.autor||"");
+    if(ordem==="nota")return(b.nota||0)-(a.nota||0);
+    if(ordem==="paginas")return(b.paginas||0)-(a.paginas||0);
+    if(ordem==="ano")return(b.ano||"").localeCompare(a.ano||"");
+    return(b.adicionadoEm||"").localeCompare(a.adicionadoEm||"");
+  });
+
+  const listaFiltrada=()=>livros.filter(b=>{
+    if(p.status&&p.status!=="todos"&&b.status!==p.status)return false;
+    if(p.genero&&!(b.genero||[]).includes(p.genero))return false;
+    if(p.autor&&b.autor!==p.autor)return false;
+    if(p.favoritos&&!b.fav)return false;
+    return true;
+  });
+
+  const jaTemTitulos=new Set(livros.map(b=>b.titulo.toLowerCase()));
+
+  const ABAS=[
+    {id:"home",l:"🏠"},
+    {id:"biblioteca",l:"📚"},
+    {id:"descobrir",l:"🌎"},
+    {id:"stats",l:"📊"},
+    {id:"metas",l:"🎯"},
+    {id:"mais",l:"✨"},
+  ];
+
+  const MAIS_ABAS=[
+    {id:"conquistas",l:"🏅 Conquistas"},
+    {id:"desafios",l:"🎯 Desafios"},
+    {id:"melhores",l:"🏆 Melhores do Mês"},
+    {id:"rankings",l:"🏆 Rankings"},
+    {id:"livro-ano",l:"🏆 Livro do Ano"},
+    {id:"retro",l:"🎬 Retrospectiva"},
+    {id:"calendario",l:"📅 Calendário"},
+  ];
+
+  const abaAtiva=ABAS.find(a=>a.id===view)?.id||hist.find(h=>ABAS.some(a=>a.id===h.view))?.view||"home";
+
+  if(carregando)return(
+    <div style={{minHeight:"100vh",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",background:T.head,gap:16}}>
+      <div style={{fontSize:52}}>📖</div>
+      <div className="spin" style={{width:40,height:40,border:`4px solid ${T.rose}`,borderTopColor:"transparent",borderRadius:"50%"}}/>
+      <div style={{color:T.mid,fontSize:14}}>Carregando sua biblioteca...</div>
+    </div>
+  );
+
+  // Tela de detalhe — tela cheia
+  if(view==="detalhe"&&p.livro){
+    const livroAtual=livros.find(b=>b.id===p.livro.id)||p.livro;
+    return(
+      <div style={{minHeight:"100vh",background:T.bg}}>
+        {formLivro&&<FormLivro livro={editLivro} onSalvar={salvarLivro} onFechar={()=>{setFormLivro(false);setEditLivro(null);}} T={T}/>}
+        <div style={{background:T.head,padding:"10px 16px",display:"flex",alignItems:"center",gap:12,position:"sticky",top:0,zIndex:100,boxShadow:`0 2px 8px rgba(0,0,0,.1)`}}>
+          <button onClick={voltar} style={{background:T.card,border:`1.5px solid ${T.border}`,borderRadius:12,width:38,height:38,display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",color:T.text,fontSize:20,flexShrink:0}}>←</button>
+          <div style={{color:T.text,fontSize:14,fontWeight:800,flex:1,overflow:"hidden",whiteSpace:"nowrap",textOverflow:"ellipsis"}}>{livroAtual.titulo}</div>
+          <button onClick={()=>{setEditLivro(null);setFormLivro(true);}} style={{background:`linear-gradient(135deg,${T.rose},${T.roseDark})`,color:"#fff",border:"none",borderRadius:12,padding:"7px 12px",fontWeight:800,fontSize:12,cursor:"pointer"}}>+ Livro</button>
+        </div>
+        <DetalheLivro livro={livroAtual} onEditar={b=>{setEditLivro(b);setFormLivro(true);}} onRemover={removerLivro} onAddLivro={r=>{addDoDescobrir(r);alert(`"${r.titulo}" adicionado! ✨`);}} T={T}/>
+      </div>
+    );
+  }
+
+  return(
+    <div style={{minHeight:"100vh",background:T.bg}}>
+      {formLivro&&<FormLivro livro={editLivro} onSalvar={salvarLivro} onFechar={()=>{setFormLivro(false);setEditLivro(null);}} T={T}/>}
+
+      {/* HEADER */}
+      <div style={{background:T.head,borderBottom:`1px solid ${T.border}`,position:"sticky",top:0,zIndex:100,boxShadow:`0 2px 8px rgba(0,0,0,.07)`}}>
+        <div style={{maxWidth:1200,margin:"0 auto",padding:"0 12px"}}>
+          <div style={{display:"flex",alignItems:"center",gap:8,height:50}}>
+            {podeVoltar
+              ?<button onClick={voltar} style={{background:T.card,border:`1.5px solid ${T.border}`,borderRadius:12,width:36,height:36,display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",color:T.text,fontSize:18,flexShrink:0}}>←</button>
+              :<div style={{fontWeight:900,fontSize:15,color:T.text,flexShrink:0}}>📖</div>
+            }
+            {/* Abas navegação */}
+            <div style={{flex:1,display:"flex",gap:2,overflowX:"auto",scrollbarWidth:"none"}}>
+              {ABAS.map(a=>(
+                <button key={a.id} onClick={()=>irAba(a.id)}
+                  style={{background:abaAtiva===a.id?T.card:"transparent",border:`1.5px solid ${abaAtiva===a.id?T.rose:"transparent"}`,borderRadius:12,padding:"5px 12px",color:abaAtiva===a.id?T.roseDark:T.mid,fontWeight:abaAtiva===a.id?800:600,fontSize:13,cursor:"pointer",transition:"all .2s",whiteSpace:"nowrap",flexShrink:0}}>
+                  {a.l}
+                </button>
+              ))}
+            </div>
+            <div style={{display:"flex",gap:5,alignItems:"center",flexShrink:0}}>
+              <button onClick={()=>setDarkMode(d=>!d)} style={{background:T.card,border:`1.5px solid ${T.border}`,borderRadius:10,width:32,height:32,display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",fontSize:15}} title={darkMode?"Claro":"Escuro"}>{darkMode?"🌞":"🌙"}</button>
+              <button onClick={sair} style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:10,width:32,height:32,display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",fontSize:14,color:T.mid}} title="Sair">🚪</button>
+              <button onClick={()=>{setEditLivro(null);setFormLivro(true);}} style={{background:`linear-gradient(135deg,${T.rose},${T.roseDark})`,color:"#fff",border:"none",borderRadius:12,padding:"7px 12px",fontWeight:800,fontSize:12,cursor:"pointer",whiteSpace:"nowrap"}}>+ Livro</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* CONTEÚDO */}
+      <div style={{maxWidth:1200,margin:"0 auto",padding:"18px 12px 60px"}}>
+
+        {view==="home"&&<Dashboard livros={livros} metas={metas} navegar={(v,params)=>{if(ABAS.find(a=>a.id===v))irAba(v);else nav(v,params);}} T={T}/>}
+
+        {view==="biblioteca"&&(
+          <>
+            <div style={{background:T.card,borderRadius:14,padding:"12px 14px",marginBottom:14,border:`1.5px solid ${T.border}`,display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
+              <input value={busca} onChange={e=>setBusca(e.target.value)} placeholder="🔍 Título, autor, série, tag..."
+                style={{flex:1,minWidth:140,background:T.bgAlt,border:`1.5px solid ${T.border}`,borderRadius:12,padding:"8px 12px",color:T.text,fontSize:13,outline:"none"}}/>
+              <span onClick={()=>setSoFav(f=>!f)} style={{cursor:"pointer",fontSize:20,filter:soFav?"none":"grayscale(1) opacity(.35)",transition:"all .2s",userSelect:"none"}}>❤️</span>
+              {[
+                {val:filtStatus,set:setFiltStatus,opts:[{v:"todos",l:"Todos"},...STATUS_LIST.map(s=>({v:s,l:`${STATUS_CFG[s].icon} ${STATUS_CFG[s].label}`}))]},
+                {val:filtGenero,set:setFiltGenero,opts:[{v:"todos",l:"Gênero"},...todosGeneros.map(g=>({v:g,l:g}))]},
+                {val:filtAno,set:setFiltAno,opts:[{v:"todos",l:"Ano"},...todosAnos.map(a=>({v:a,l:a}))]},
+                {val:ordem,set:setOrdem,opts:[{v:"adicionadoEm",l:"📅 Recentes"},{v:"titulo",l:"🔤 A–Z"},{v:"autor",l:"✍️ Autor"},{v:"nota",l:"⭐ Nota"},{v:"paginas",l:"📄 Páginas"},{v:"ano",l:"📅 Ano"}]},
+              ].map((s,i)=>(
+                <select key={i} value={s.val} onChange={e=>s.set(e.target.value)} style={{background:T.bgAlt,border:`1.5px solid ${T.border}`,borderRadius:12,padding:"8px 10px",color:T.text,fontSize:11,outline:"none"}}>
+                  {s.opts.map(o=><option key={o.v} value={o.v}>{o.l}</option>)}
+                </select>
+              ))}
+              <span style={{color:T.muted,fontSize:11,whiteSpace:"nowrap"}}>{filtrados.length}</span>
+            </div>
+            {!filtrados.length
+              ?<div style={{textAlign:"center",padding:"50px 0"}}><div style={{fontSize:52,marginBottom:12}}>📚</div><div style={{color:T.text,fontSize:16,fontWeight:800,marginBottom:16}}>Nenhum livro encontrado</div><button onClick={()=>{setEditLivro(null);setFormLivro(true);}} style={{background:`linear-gradient(135deg,${T.rose},${T.roseDark})`,color:"#fff",border:"none",borderRadius:12,padding:"11px 22px",fontWeight:800,fontSize:14,cursor:"pointer"}}>+ Adicionar livro</button></div>
+              :<div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(138px,1fr))",gap:12}}>
+                {filtrados.map(b=><CardLivro key={b.id} livro={b} onClick={b=>nav("detalhe",{livro:b})} onFav={toggleFav} T={T}/>)}
+              </div>
+            }
+          </>
+        )}
+
+        {view==="descobrir"&&<div style={{background:T.card,borderRadius:20,padding:"20px 16px",border:`1.5px solid ${T.border}`}}><Descobrir onAdd={addDoDescobrir} jaTemTitulos={jaTemTitulos} T={T}/></div>}
+        {view==="stats"&&<Estatisticas livros={livros} navegar={nav} T={T}/>}
+        {view==="metas"&&<Metas livros={livros} metas={metas} setMetas={setMetas} T={T}/>}
+
+        {/* ✨ MAIS — menu de telas extras */}
+        {view==="mais"&&(
+          <div>
+            <div style={{color:T.text,fontSize:17,fontWeight:900,marginBottom:16}}>✨ Explorar</div>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(160px,1fr))",gap:12}}>
+              {MAIS_ABAS.map(a=>(
+                <button key={a.id} onClick={()=>nav(a.id)} style={{background:T.card,border:`1.5px solid ${T.border}`,borderRadius:16,padding:"20px 14px",cursor:"pointer",textAlign:"center",transition:"all .2s"}}
+                  onMouseEnter={e=>{e.currentTarget.style.borderColor=T.rose;e.currentTarget.style.transform="translateY(-3px)";e.currentTarget.style.boxShadow=`0 8px 20px ${T.rose}20`;}}
+                  onMouseLeave={e=>{e.currentTarget.style.borderColor=T.border;e.currentTarget.style.transform="none";e.currentTarget.style.boxShadow="none";}}>
+                  <div style={{fontSize:28,marginBottom:8}}>{a.l.slice(0,2)}</div>
+                  <div style={{color:T.text,fontSize:13,fontWeight:700}}>{a.l.slice(3)}</div>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {view==="conquistas"&&<Conquistas livros={livros} T={T}/>}
+        {view==="desafios"&&<Desafios livros={livros} T={T}/>}
+        {view==="melhores"&&<MelhoresDoMes livros={livros} T={T}/>}
+        {view==="rankings"&&<Rankings livros={livros} navegar={nav} T={T}/>}
+        {view==="livro-ano"&&<LivroDoAno livros={livros} T={T}/>}
+        {view==="retro"&&<Retrospectiva livros={livros} T={T}/>}
+        {view==="calendario"&&<Calendario livros={livros} T={T}/>}
+
+        {view==="lista"&&(
+          <div>
+            <div style={{color:T.muted,fontSize:12,marginBottom:12}}>{listaFiltrada().length} livro(s)</div>
+            {!listaFiltrada().length
+              ?<div style={{textAlign:"center",padding:"40px 0",color:T.muted}}><div style={{fontSize:44,marginBottom:10}}>📚</div>Nenhum livro nesta categoria</div>
+              :<div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(138px,1fr))",gap:12}}>
+                {listaFiltrada().map(b=><CardLivro key={b.id} livro={b} onClick={b=>nav("detalhe",{livro:b})} onFav={toggleFav} T={T}/>)}
+              </div>
+            }
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
+// ══════════════════════════════════════════
+// APP RAIZ
+// ══════════════════════════════════════════
+
+// Emails que são sempre admin — mesmo sem documento no Firestore
+const ADMIN_EMAILS = [
+  "t.e.x.u.g.o@hotmail.com",
+  "admin@diario.com",
+];
+
+function App(){
+  const[fbUser,setFbUser]=useState(null);
+  const[perfil,setPerfil]=useState(null);
+  const[carregando,setCarregando]=useState(true);
+  const[darkMode,setDarkMode]=useState(false);
+  const T=darkMode?DARK:LIGHT;
+
+  useEffect(()=>{
+    const unsub=auth.onAuthStateChanged(async u=>{
+      if(u){
+        setFbUser(u);
+        try{
+          const snap=await db.collection("users").doc(u.uid).get();
+          if(snap.exists){
+            const d=snap.data();
+            if(d.bloqueado){await auth.signOut();setFbUser(null);setPerfil(null);setCarregando(false);return;}
+            setPerfil(d);
+          } else {
+            // Documento não existe — cria automaticamente
+            const isAdmin=ADMIN_EMAILS.includes(u.email?.toLowerCase());
+            const novoPerfil={
+              nome: isAdmin?"Administrador":"Usuário",
+              email:u.email?.toLowerCase()||"",
+              role: isAdmin?"admin":"user",
+              bloqueado:false,
+              criadoEm:firebase.firestore.FieldValue.serverTimestamp(),
+            };
+            await db.collection("users").doc(u.uid).set(novoPerfil);
+            setPerfil(novoPerfil);
+          }
+        }catch(e){
+          // Se Firestore falhar, usa o email para decidir o papel
+          const isAdmin=ADMIN_EMAILS.includes(u.email?.toLowerCase());
+          setPerfil({nome:isAdmin?"Administrador":"Usuário",email:u.email,role:isAdmin?"admin":"user",bloqueado:false});
+        }
+      }else{setFbUser(null);setPerfil(null);}
+      setCarregando(false);
+    });
+    return unsub;
+  },[]);
+
+  const sair=async()=>{
+    try{if(fbUser)await auditLog(fbUser.uid,"LOGOUT",{});}catch{}
+    await auth.signOut();
+  };
+
+  if(carregando)return(
+    <div style={{minHeight:"100vh",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",background:"linear-gradient(135deg,#FCE4EC,#EDE7F6)",gap:16}}>
+      <div style={{fontSize:52}}>📖</div>
+      <div className="spin" style={{width:40,height:40,border:"4px solid #F4A7B9",borderTopColor:"transparent",borderRadius:"50%"}}/>
+      <div style={{color:"#7A6B8A",fontSize:14}}>Carregando...</div>
+    </div>
+  );
+
+  if(!fbUser)return <TelaLogin/>;
+
+  // Nunca trava: se não tem perfil ainda, mostra loading brevemente
+  if(!perfil)return(
+    <div style={{minHeight:"100vh",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",background:"linear-gradient(135deg,#FCE4EC,#EDE7F6)",gap:16}}>
+      <div style={{fontSize:52}}>📖</div>
+      <div className="spin" style={{width:40,height:40,border:"4px solid #F4A7B9",borderTopColor:"transparent",borderRadius:"50%"}}/>
+      <div style={{color:"#7A6B8A",fontSize:14}}>Configurando conta...</div>
+    </div>
+  );
+
+  if(perfil?.bloqueado)return(
+    <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",background:"#FEF6F0",padding:20}}>
+      <div style={{background:"#FFEBEE",borderRadius:20,padding:"32px 28px",textAlign:"center",maxWidth:340,border:"2px solid #EF5350"}}>
+        <div style={{fontSize:48,marginBottom:12}}>🔒</div>
+        <div style={{color:"#4A3F5C",fontSize:18,fontWeight:800,marginBottom:8}}>Conta bloqueada</div>
+        <div style={{color:"#7A6B8A",fontSize:13,lineHeight:1.6}}>Sua conta foi bloqueada pelo administrador.<br/>Entre em contato com Ademir.</div>
+        <button onClick={sair} style={{marginTop:16,background:"#FFEBEE",color:"#EF5350",border:"1px solid #EF5350",borderRadius:10,padding:"8px 20px",fontWeight:700,cursor:"pointer"}}>Sair</button>
+      </div>
+    </div>
+  );
+
+  if(perfil?.role==="admin")return <TelaAdmin user={fbUser} perfil={perfil} sair={sair}/>;
+
+  return <TelaDiario user={fbUser} perfil={perfil} sair={sair} T={T} darkMode={darkMode} setDarkMode={setDarkMode}/>;
+}
+
+const root=ReactDOM.createRoot(document.getElementById("root"));
+root.render(<App/>);
+
+</script>
+
+</body>
+</html>
